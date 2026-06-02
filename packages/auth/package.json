@@ -19,13 +19,16 @@
   "description": "Shared OAuth authentication for google-mcp (PKCE support)",
   "scripts": {
     "build": "tsc",
+    "test": "tsx --test test/*.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "google-auth-library": "^10.5.0"
   },
   "devDependencies": {
+    "@googleapis/drive": "^20.1.0",
     "@types/node": "^25.2.3",
+    "tsx": "^4.21.0",
     "typescript": "^5.9.3"
   }
 }

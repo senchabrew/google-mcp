@@ -1,22 +1,24 @@
-import { loadConfig } from "@shivaduke28/google-mcp-auth";
+import {
+  STANDARD_ACCESS_HIERARCHY,
+  checkDirectAccess,
+  findContainingAllowedFolder,
+  getAllSubfolderIds,
+  loadCommonConfig,
+  loadConfig,
+} from "@shivaduke28/google-mcp-auth";
+import type {
+  CommonConfig,
+  FolderEntry,
+  ResourceEntry,
+  StandardAccess,
+} from "@shivaduke28/google-mcp-auth";
 import type { drive_v3 } from "@googleapis/drive";
 
-export interface DocumentEntry {
-  id: string;
-  name: string;
-}
-
-export interface FolderEntry {
-  id: string;
-  name: string;
-}
+export type DocumentEntry = ResourceEntry<StandardAccess>;
 
 export interface PermissionConfig {
   allowedDocuments: DocumentEntry[];
-  allowedFolders: FolderEntry[];
 }
-
-const GOOGLE_FOLDER_MIME_TYPE = "application/vnd.google-apps.folder";
 
 export async function loadPermissionConfig(
   configPath: string | undefined
@@ -24,122 +26,114 @@ export async function loadPermissionConfig(
   return await loadConfig<PermissionConfig>(configPath, "docs");
 }
 
-export function checkDocumentAccess(
-  config: PermissionConfig | null,
-  fileId: string
-): { allowed: boolean; reason?: string } {
-  // allowlist が未設定の場合は全アクセス許可
-  if (!config) return { allowed: true };
-
-  const entry = config.allowedDocuments.find((e) => e.id === fileId);
-  if (entry) return { allowed: true };
-
-  return {
-    allowed: false,
-    reason: `ドキュメント (${fileId}) はallowlistに登録されていません。allowedDocumentsに追加するか、allowedFoldersに含まれるフォルダ内のドキュメントを指定してください。`,
-  };
-}
-
-export function checkFolderAccess(
-  config: PermissionConfig | null,
-  folderId: string
-): { allowed: boolean; reason?: string } {
-  if (!config) return { allowed: true };
-
-  const entry = config.allowedFolders.find((e) => e.id === folderId);
-  if (entry) return { allowed: true };
-
-  return {
-    allowed: false,
-    reason: `フォルダ (${folderId}) はallowlistに登録されていません。`,
-  };
-}
-
-export function isFileInAllowedFolder(
-  config: PermissionConfig | null,
-  parentIds: string[]
-): boolean {
-  if (!config) return true;
-
-  return parentIds.some((parentId) =>
-    config.allowedFolders.some((folder) => folder.id === parentId)
-  );
+export async function loadConfigs(configPath: string | undefined): Promise<{
+  permission: PermissionConfig | null;
+  common: CommonConfig | null;
+}> {
+  const [permission, common] = await Promise.all([
+    loadPermissionConfig(configPath),
+    loadCommonConfig(configPath),
+  ]);
+  return { permission, common };
 }
 
 /**
- * 指定フォルダ配下の全サブフォルダIDを再帰的に取得する。
- * visited セットで循環参照を防止。
+ * Document にアクセスできるか判定する
+ * 1. permission.allowedDocuments に直接 hit → entry の access チェック
+ * 2. drive で親 folder を辿り、common.allowedFolders の子孫なら folder の access を継承
+ * 3. どちらでもなければ deny
  */
-export async function getAllSubfolderIds(
-  drive: drive_v3.Drive,
-  folderId: string
-): Promise<string[]> {
-  const result: string[] = [];
-  const visited = new Set<string>();
+export async function checkAccess(
+  permission: PermissionConfig | null,
+  common: CommonConfig | null,
+  drive: drive_v3.Drive | null,
+  fileId: string,
+  requireWrite: boolean
+): Promise<{ allowed: boolean; reason?: string }> {
+  const required: StandardAccess = requireWrite ? "readwrite" : "readonly";
 
-  async function collect(parentId: string): Promise<void> {
-    if (visited.has(parentId)) return;
-    visited.add(parentId);
+  // allowlist 未設定 = 全許可 (read のみ。write は厳密)
+  if (!permission && !common) {
+    if (requireWrite) {
+      return {
+        allowed: false,
+        reason: `書き込み操作には allowlist 経由の access: readwrite 登録が必須です。GOOGLE_MCP_CONFIG を設定してください。`,
+      };
+    }
+    return { allowed: true };
+  }
 
-    const res = await drive.files.list({
-      q: `'${parentId}' in parents and mimeType = '${GOOGLE_FOLDER_MIME_TYPE}' and trashed = false`,
-      fields: "files(id)",
-      pageSize: 1000,
-      supportsAllDrives: true,
-      includeItemsFromAllDrives: true,
-    });
-
-    for (const file of res.data.files ?? []) {
-      if (file.id) {
-        result.push(file.id);
-        await collect(file.id);
-      }
+  // 1. 直接 allowlist hit
+  if (permission?.allowedDocuments?.length) {
+    const direct = checkDirectAccess(
+      permission.allowedDocuments,
+      fileId,
+      required,
+      STANDARD_ACCESS_HIERARCHY
+    );
+    if (direct.entry) {
+      return direct;
     }
   }
 
-  await collect(folderId);
-  return result;
-}
-
-/**
- * ファイルの親IDから祖先方向にたどり、allowedFolders のいずれかに到達するか確認する。
- * visited セットで無限ループを防止。
- */
-export async function isDescendantOfAllowedFolder(
-  drive: drive_v3.Drive,
-  config: PermissionConfig | null,
-  parentIds: string[]
-): Promise<boolean> {
-  if (!config) return true;
-
-  const allowedFolderIds = new Set(
-    config.allowedFolders.map((folder) => folder.id)
-  );
-  const visited = new Set<string>();
-
-  async function checkAncestors(ids: string[]): Promise<boolean> {
-    for (const id of ids) {
-      if (visited.has(id)) continue;
-      visited.add(id);
-
-      if (allowedFolderIds.has(id)) return true;
-
-      try {
-        const res = await drive.files.get({
-          fileId: id,
-          fields: "parents",
-          supportsAllDrives: true,
-        });
-        const grandParents = res.data.parents ?? [];
-        if (grandParents.length > 0) {
-          if (await checkAncestors(grandParents)) return true;
+  // 2. 共通 allowedFolders 経由 (drive 必須)
+  if (common?.allowedFolders?.length && drive) {
+    try {
+      const fileMeta = await drive.files.get({
+        fileId,
+        fields: "parents",
+        supportsAllDrives: true,
+      });
+      const parentIds = fileMeta.data.parents ?? [];
+      const folder = await findContainingAllowedFolder(
+        drive,
+        common.allowedFolders,
+        parentIds
+      );
+      if (folder) {
+        const folderAccess: StandardAccess = folder.access ?? "readonly";
+        if (folderAccess === "readwrite" || !requireWrite) {
+          return { allowed: true };
         }
-      } catch {
-        // ファイルが見つからない場合等はスキップ
+        return {
+          allowed: false,
+          reason: `Document (${fileId}) は allowedFolders「${folder.name}」経由で access: ${folderAccess} です。${required} 操作には folder の access を readwrite に上げてください。`,
+        };
       }
+    } catch {
+      // file 取得失敗時はそのまま deny
     }
-    return false;
   }
 
-  return checkAncestors(parentIds);
+  return {
+    allowed: false,
+    reason: `Document (${fileId}) は allowlist に登録されていません。allowedDocuments または allowedFolders の配下に追加してください。`,
+  };
 }
+
+/**
+ * folder ID が common.allowedFolders に直接 or 子孫として含まれるか判定する
+ */
+export async function checkFolderAccess(
+  common: CommonConfig | null,
+  drive: drive_v3.Drive | null,
+  folderId: string
+): Promise<{ allowed: boolean; folder?: FolderEntry<StandardAccess>; reason?: string }> {
+  if (!common) return { allowed: true };
+
+  const direct = common.allowedFolders?.find((e) => e.id === folderId);
+  if (direct) return { allowed: true, folder: direct };
+
+  if (common.allowedFolders?.length && drive) {
+    const folder = await findContainingAllowedFolder(drive, common.allowedFolders, [folderId]);
+    if (folder) return { allowed: true, folder };
+  }
+
+  return {
+    allowed: false,
+    reason: `フォルダ (${folderId}) は allowlist (allowedFolders) に登録されていません。`,
+  };
+}
+
+export { getAllSubfolderIds };
+export type { CommonConfig, FolderEntry };

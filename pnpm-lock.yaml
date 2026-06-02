@@ -8,15 +8,52 @@ importers:
 
   .: {}
 
+  packages/apps-script:
+    dependencies:
+      '@googleapis/drive':
+        specifier: ^20.1.0
+        version: 20.1.0
+      '@googleapis/script':
+        specifier: ^11.0.1
+        version: 11.0.1
+      '@modelcontextprotocol/sdk':
+        specifier: ^1.26.0
+        version: 1.26.0(zod@4.3.6)
+      '@shivaduke28/google-mcp-auth':
+        specifier: workspace:*
+        version: link:../auth
+      '@toon-format/toon':
+        specifier: ^2.1.0
+        version: 2.1.0
+      zod:
+        specifier: ^4.3.6
+        version: 4.3.6
+    devDependencies:
+      '@types/node':
+        specifier: ^25.2.3
+        version: 25.3.0
+      tsx:
+        specifier: ^4.21.0
+        version: 4.21.0
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
   packages/auth:
     dependencies:
       google-auth-library:
         specifier: ^10.5.0
         version: 10.5.0
     devDependencies:
+      '@googleapis/drive':
+        specifier: ^20.1.0
+        version: 20.1.0
       '@types/node':
         specifier: ^25.2.3
         version: 25.3.0
+      tsx:
+        specifier: ^4.21.0
+        version: 4.21.0
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
@@ -107,6 +144,9 @@ importers:
 
   packages/sheets:
     dependencies:
+      '@googleapis/drive':
+        specifier: ^20.1.0
+        version: 20.1.0
       '@googleapis/sheets':
         specifier: ^13.0.1
         version: 13.0.1
@@ -301,6 +341,10 @@ packages:
 
   '@googleapis/gmail@16.1.1':
     resolution: {integrity: sha512-XFMMJvhpEoKzwBOHYrcbBu/jHS+8Aer5YmbMUsrZeJgXAbTD6K7K6+/1RJczXIqDoBzVDdECm4WtjAcvEHPLVg==}
+    engines: {node: '>=12.0.0'}
+
+  '@googleapis/script@11.0.1':
+    resolution: {integrity: sha512-wSc42XTxxK6sigfaPxjaZUG1SWVdDNxYtk4sYgzyimViIGyAl/KEV3FeiXUFxHdQ32+vnsN9KtZWHEDaP+D3dw==}
     engines: {node: '>=12.0.0'}
 
   '@googleapis/sheets@13.0.1':
@@ -1000,6 +1044,12 @@ snapshots:
       - supports-color
 
   '@googleapis/gmail@16.1.1':
+    dependencies:
+      googleapis-common: 8.0.1
+    transitivePeerDependencies:
+      - supports-color
+
+  '@googleapis/script@11.0.1':
     dependencies:
       googleapis-common: 8.0.1
     transitivePeerDependencies:
