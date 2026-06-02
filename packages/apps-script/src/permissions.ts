@@ -12,11 +12,12 @@ import type {
 } from "@shivaduke28/google-mcp-auth";
 import type { drive_v3 } from "@googleapis/drive";
 
-/** apps-script 固有の access level */
-export type AppsScriptAccess = "readonly" | "readwrite" | "execute";
+/** apps-script 固有の access level (deny < readonly < readwrite < execute) */
+export type AppsScriptAccess = "deny" | "readonly" | "readwrite" | "execute";
 
-/** apps-script の階層: readonly < readwrite < execute (execute は readwrite/readonly を含む) */
+/** apps-script の階層: deny < readonly < readwrite < execute */
 export const APPS_SCRIPT_ACCESS_HIERARCHY: Record<string, number> = {
+  deny: 0,
   readonly: 1,
   readwrite: 2,
   execute: 3,

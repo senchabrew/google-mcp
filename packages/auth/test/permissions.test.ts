@@ -23,9 +23,15 @@ describe("hasAccess", () => {
     assert.equal(hasAccess("readonly", "readwrite", STANDARD_ACCESS_HIERARCHY), false);
   });
 
-  it("given が undefined なら最低レベル扱い (readonly required は不可)", () => {
-    assert.equal(hasAccess(undefined, "readonly", STANDARD_ACCESS_HIERARCHY), false);
+  it("given が undefined なら default readonly として扱う", () => {
+    // access 省略 = default readonly。readonly 要求は通る、readwrite 要求は通らない
+    assert.equal(hasAccess(undefined, "readonly", STANDARD_ACCESS_HIERARCHY), true);
     assert.equal(hasAccess(undefined, "readwrite", STANDARD_ACCESS_HIERARCHY), false);
+  });
+
+  it("given が 'deny' なら明示的に拒否 (readonly も通らない)", () => {
+    assert.equal(hasAccess("deny", "readonly", STANDARD_ACCESS_HIERARCHY), false);
+    assert.equal(hasAccess("deny", "readwrite", STANDARD_ACCESS_HIERARCHY), false);
   });
 
   it("階層に無い値は最低 (0) 扱い", () => {

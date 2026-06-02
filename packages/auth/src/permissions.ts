@@ -3,8 +3,12 @@ import type { drive_v3 } from "@googleapis/drive";
 
 const GOOGLE_FOLDER_MIME_TYPE = "application/vnd.google-apps.folder";
 
-/** 標準 access level (sheets / docs 用)。apps-script は独自拡張 */
-export type StandardAccess = "readonly" | "readwrite";
+/**
+ * 標準 access level (sheets / docs 用)。apps-script は独自拡張。
+ * `deny` は明示的にアクセス不可を示す (例: folder readwrite で広く許可しつつ、
+ * 個別 entry を deny にすることで「このファイルだけは触らない」を表現する用途)
+ */
+export type StandardAccess = "deny" | "readonly" | "readwrite";
 
 /** リソース (file) の許可エントリ */
 export interface ResourceEntry<A extends string = StandardAccess> {
@@ -32,8 +36,9 @@ export async function loadCommonConfig(
   return await loadConfig<CommonConfig>(configPath);
 }
 
-/** 標準 access の階層: readonly < readwrite */
+/** 標準 access の階層: deny < readonly < readwrite */
 export const STANDARD_ACCESS_HIERARCHY: Record<string, number> = {
+  deny: 0,
   readonly: 1,
   readwrite: 2,
 };
@@ -47,8 +52,13 @@ export function hasAccess(
   required: string,
   hierarchy: Record<string, number>
 ): boolean {
-  const givenLevel = given ? hierarchy[given] ?? 0 : 0;
+  // given が undefined のときは default readonly (= 1) として扱う。
+  // 明示的に deny (= 0) を立てたい場合は entry.access に "deny" を書く。
+  const givenLevel =
+    given !== undefined ? hierarchy[given] ?? 0 : hierarchy["readonly"] ?? 0;
   const requiredLevel = hierarchy[required] ?? 0;
+  // requiredLevel = 0 (deny) の要求は意味的に成立しないので false 扱い
+  if (requiredLevel === 0) return false;
   return givenLevel >= requiredLevel;
 }
 
