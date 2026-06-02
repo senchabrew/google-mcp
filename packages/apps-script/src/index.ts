@@ -36,7 +36,8 @@ const resolvedTokensPath: string = process.env.GOOGLE_OAUTH_TOKENS
   ? resolvePath(process.env.GOOGLE_OAUTH_TOKENS)
   : join(homedir(), ".config", "google-apps-script-mcp", "tokens.json");
 
-const { permission: permConfig, common: commonConfig } = await loadConfigs(configPath);
+// パーミッション設定は tool 呼び出しごとに loadConfigs() で最新を取得する
+// (config.json を外部から変更しても即座に反映される)
 
 let scriptClient: ReturnType<typeof googleScript> | null = null;
 let driveClient: ReturnType<typeof googleDrive> | null = null;
@@ -57,6 +58,13 @@ async function getDrive() {
   return (await ensureAuth()).drive;
 }
 
+/** tool 呼び出しごとに最新権限を取得 */
+async function resolveAccess(scriptId: string, required: "readonly" | "readwrite" | "execute") {
+  const { permission, common } = await loadConfigs(configPath);
+  const drive = common?.allowedFolders?.length ? await getDrive() : null;
+  return await checkAccess(permission, common, drive, scriptId, required);
+}
+
 const server = new McpServer({
   name: "google-apps-script-mcp",
   version: "1.0.0",
@@ -70,7 +78,8 @@ server.registerTool(
     inputSchema: {},
   },
   async () => {
-    if (!permConfig && !commonConfig) {
+    const { permission, common } = await loadConfigs(configPath);
+    if (!permission && !common) {
       return {
         content: [
           {
@@ -81,14 +90,14 @@ server.registerTool(
       };
     }
 
-    const projects = (permConfig?.allowedProjects ?? []).map((entry) => ({
+    const projects = (permission?.allowedProjects ?? []).map((entry) => ({
       id: entry.id,
       name: entry.name,
       access: entry.access ?? "readonly",
       via: "direct",
     }));
 
-    const folders = (commonConfig?.allowedFolders ?? []).map((entry) => ({
+    const folders = (common?.allowedFolders ?? []).map((entry) => ({
       id: entry.id,
       name: entry.name,
       access: entry.access ?? "readonly",
@@ -120,8 +129,7 @@ server.registerTool(
     },
   },
   async ({ scriptId }) => {
-    const drive = commonConfig?.allowedFolders?.length ? await getDrive() : null;
-    const { allowed, reason } = await checkAccess(permConfig, commonConfig, drive, scriptId, "readonly");
+    const { allowed, reason } = await resolveAccess(scriptId, "readonly");
     if (!allowed) {
       return { content: [{ type: "text" as const, text: reason! }], isError: true };
     }
@@ -156,8 +164,7 @@ server.registerTool(
     },
   },
   async ({ scriptId }) => {
-    const drive = commonConfig?.allowedFolders?.length ? await getDrive() : null;
-    const { allowed, reason } = await checkAccess(permConfig, commonConfig, drive, scriptId, "readonly");
+    const { allowed, reason } = await resolveAccess(scriptId, "readonly");
     if (!allowed) {
       return { content: [{ type: "text" as const, text: reason! }], isError: true };
     }
@@ -205,8 +212,7 @@ server.registerTool(
     },
   },
   async ({ scriptId, files }) => {
-    const drive = commonConfig?.allowedFolders?.length ? await getDrive() : null;
-    const { allowed, reason } = await checkAccess(permConfig, commonConfig, drive, scriptId, "readwrite");
+    const { allowed, reason } = await resolveAccess(scriptId, "readwrite");
     if (!allowed) {
       return { content: [{ type: "text" as const, text: reason! }], isError: true };
     }

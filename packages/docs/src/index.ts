@@ -35,8 +35,8 @@ const resolvedTokensPath: string = process.env.GOOGLE_OAUTH_TOKENS
   ? resolvePath(process.env.GOOGLE_OAUTH_TOKENS)
   : join(homedir(), ".config", "google-docs-mcp", "tokens.json");
 
-// パーミッション設定 (own + common)
-const { permission: permConfig, common: commonConfig } = await loadConfigs(configPath);
+// パーミッション設定は tool 呼び出しごとに loadConfigs() で最新を取得する
+// (config.json を外部から変更しても即座に反映される)
 
 // lazy auth: ツール呼び出し時に初めて認証する
 let driveClient: ReturnType<typeof googleDrive> | null = null;
@@ -53,6 +53,14 @@ async function getDrive() {
   return driveClient;
 }
 
+/** tool 呼び出しごとに最新権限を取得 */
+async function resolveAccess(fileId: string, requireWrite: boolean) {
+  const { permission, common } = await loadConfigs(configPath);
+  const drive = common?.allowedFolders?.length ? await getDrive() : null;
+  const check = await checkAccess(permission, common, drive, fileId, requireWrite);
+  return { ...check, permission, common };
+}
+
 const server = new McpServer({
   name: "google-docs-mcp",
   version: "2.0.0",
@@ -67,7 +75,8 @@ server.registerTool(
     inputSchema: {},
   },
   async () => {
-    if (!permConfig && !commonConfig) {
+    const { permission, common } = await loadConfigs(configPath);
+    if (!permission && !common) {
       return {
         content: [
           {
@@ -78,14 +87,14 @@ server.registerTool(
       };
     }
 
-    const documents = (permConfig?.allowedDocuments ?? []).map((entry) => ({
+    const documents = (permission?.allowedDocuments ?? []).map((entry) => ({
       id: entry.id,
       name: entry.name,
       access: entry.access ?? "readonly",
       type: "document",
     }));
 
-    const folders = (commonConfig?.allowedFolders ?? []).map((entry) => ({
+    const folders = (common?.allowedFolders ?? []).map((entry) => ({
       id: entry.id,
       name: entry.name,
       access: entry.access ?? "readonly",
@@ -123,8 +132,9 @@ server.registerTool(
     },
   },
   async ({ folderId, pageToken }) => {
+    const { common } = await loadConfigs(configPath);
     const drive = await getDrive();
-    const { allowed, reason } = await checkFolderAccess(commonConfig, drive, folderId);
+    const { allowed, reason } = await checkFolderAccess(common, drive, folderId);
     if (!allowed) {
       return { content: [{ type: "text" as const, text: reason! }], isError: true };
     }
@@ -189,11 +199,11 @@ server.registerTool(
     },
   },
   async ({ fileId, format }) => {
-    const drive = await getDrive();
-    const { allowed, reason } = await checkAccess(permConfig, commonConfig, drive, fileId, false);
+    const { allowed, reason } = await resolveAccess(fileId, false);
     if (!allowed) {
       return { content: [{ type: "text" as const, text: reason! }], isError: true };
     }
+    const drive = await getDrive();
 
     // mime type 確認
     const meta = await drive.files.get({
@@ -256,7 +266,8 @@ server.registerTool(
     },
   },
   async ({ query }) => {
-    if (!permConfig && !commonConfig) {
+    const { permission, common } = await loadConfigs(configPath);
+    if (!permission && !common) {
       return {
         content: [
           {
@@ -279,7 +290,7 @@ server.registerTool(
 
     // 共通 allowedFolders 配下を検索 (サブフォルダ含む)
     const { getAllSubfolderIds } = await import("@shivaduke28/google-mcp-auth");
-    for (const folder of commonConfig?.allowedFolders ?? []) {
+    for (const folder of common?.allowedFolders ?? []) {
       const subfolderIds = await getAllSubfolderIds(drive, folder.id);
       const folderIdsToSearch = [folder.id, ...subfolderIds];
 
@@ -312,7 +323,7 @@ server.registerTool(
 
     // allowedDocuments も名前でフィルタ
     const lowerQuery = query.toLowerCase();
-    const matchedDocs = (permConfig?.allowedDocuments ?? [])
+    const matchedDocs = (permission?.allowedDocuments ?? [])
       .filter((doc) => doc.name.toLowerCase().includes(lowerQuery))
       .map((doc) => ({
         id: doc.id,
