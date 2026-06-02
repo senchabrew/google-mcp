@@ -5,14 +5,7 @@ import { z } from "zod";
 import { encode } from "@toon-format/toon";
 import { authorize, resolvePath } from "@shivaduke28/google-mcp-auth";
 import { drive as googleDrive } from "@googleapis/drive";
-import {
-  loadPermissionConfig,
-  checkDocumentAccess,
-  checkFolderAccess,
-  isFileInAllowedFolder,
-  getAllSubfolderIds,
-  isDescendantOfAllowedFolder,
-} from "./permissions.js";
+import { loadConfigs, checkAccess, checkFolderAccess } from "./permissions.js";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -42,8 +35,8 @@ const resolvedTokensPath: string = process.env.GOOGLE_OAUTH_TOKENS
   ? resolvePath(process.env.GOOGLE_OAUTH_TOKENS)
   : join(homedir(), ".config", "google-docs-mcp", "tokens.json");
 
-// パーミッション設定
-const permConfig = await loadPermissionConfig(configPath);
+// パーミッション設定は tool 呼び出しごとに loadConfigs() で最新を取得する
+// (config.json を外部から変更しても即座に反映される)
 
 // lazy auth: ツール呼び出し時に初めて認証する
 let driveClient: ReturnType<typeof googleDrive> | null = null;
@@ -60,9 +53,17 @@ async function getDrive() {
   return driveClient;
 }
 
+/** tool 呼び出しごとに最新権限を取得 */
+async function resolveAccess(fileId: string, requireWrite: boolean) {
+  const { permission, common } = await loadConfigs(configPath);
+  const drive = common?.allowedFolders?.length ? await getDrive() : null;
+  const check = await checkAccess(permission, common, drive, fileId, requireWrite);
+  return { ...check, permission, common };
+}
+
 const server = new McpServer({
   name: "google-docs-mcp",
-  version: "1.0.0",
+  version: "2.0.0",
 });
 
 // 1. list-documents
@@ -70,30 +71,33 @@ server.registerTool(
   "list-documents",
   {
     description:
-      "allowlistに登録されたドキュメントとフォルダの一覧を返す。レスポンスはTOON形式で返す。",
+      "allowlist に登録されたドキュメントと共通フォルダの一覧を返す。レスポンスは TOON 形式で返す。",
     inputSchema: {},
   },
   async () => {
-    if (!permConfig) {
+    const { permission, common } = await loadConfigs(configPath);
+    if (!permission && !common) {
       return {
         content: [
           {
             type: "text" as const,
-            text: "allowlistが設定されていません。GOOGLE_MCP_CONFIG 環境変数で設定ファイルを指定してください。",
+            text: "allowlist が設定されていません。GOOGLE_MCP_CONFIG 環境変数で設定ファイルを指定してください。",
           },
         ],
       };
     }
 
-    const documents = (permConfig.allowedDocuments ?? []).map((entry) => ({
+    const documents = (permission?.allowedDocuments ?? []).map((entry) => ({
       id: entry.id,
       name: entry.name,
+      access: entry.access ?? "readonly",
       type: "document",
     }));
 
-    const folders = (permConfig.allowedFolders ?? []).map((entry) => ({
+    const folders = (common?.allowedFolders ?? []).map((entry) => ({
       id: entry.id,
       name: entry.name,
+      access: entry.access ?? "readonly",
       type: "folder",
     }));
 
@@ -106,7 +110,7 @@ server.registerTool(
           text:
             items.length > 0
               ? encode({ allowedItems: items })
-              : "allowlistにドキュメント/フォルダが登録されていません。",
+              : "allowlist にドキュメント/フォルダが登録されていません。",
         },
       ],
     };
@@ -118,7 +122,7 @@ server.registerTool(
   "list-folder",
   {
     description:
-      "許可されたフォルダ内のGoogle Docsファイル一覧を取得する。レスポンスはTOON形式で返す。",
+      "許可されたフォルダ内の Google Docs ファイル一覧を取得する。allowedFolders に直接登録されたフォルダ、またはその子孫フォルダのみ。レスポンスは TOON 形式で返す。",
     inputSchema: {
       folderId: z.string().describe("フォルダID"),
       pageToken: z
@@ -128,21 +132,13 @@ server.registerTool(
     },
   },
   async ({ folderId, pageToken }) => {
-    const { allowed, reason } = checkFolderAccess(permConfig, folderId);
+    const { common } = await loadConfigs(configPath);
+    const drive = await getDrive();
+    const { allowed, reason } = await checkFolderAccess(common, drive, folderId);
     if (!allowed) {
-      // 直接の allowedFolder でなくても、祖先チェーンで許可フォルダの子孫なら許可
-      const drive = await getDrive();
-      const isDescendant = await isDescendantOfAllowedFolder(
-        drive,
-        permConfig,
-        [folderId]
-      );
-      if (!isDescendant) {
-        return { content: [{ type: "text" as const, text: reason! }], isError: true };
-      }
+      return { content: [{ type: "text" as const, text: reason! }], isError: true };
     }
 
-    const drive = await getDrive();
     const res = await drive.files.list({
       q: `'${folderId}' in parents and (mimeType = '${GOOGLE_DOCS_MIME_TYPE}' or mimeType = '${GOOGLE_FOLDER_MIME_TYPE}') and trashed = false`,
       fields:
@@ -174,7 +170,7 @@ server.registerTool(
           text:
             files.length > 0
               ? encode(result)
-              : "フォルダ内にGoogle Docsが見つかりませんでした。",
+              : "フォルダ内に Google Docs が見つかりませんでした。",
         },
       ],
     };
@@ -186,7 +182,7 @@ server.registerTool(
   "read-document",
   {
     description:
-      "Google Docsのドキュメント内容を取得する。デフォルトはHTML形式（見出し・リスト・テーブル等の構造を保持）。allowlistに登録されたドキュメント、または許可されたフォルダ内のドキュメントのみ読み取り可能。",
+      "Google Docs のドキュメント内容を取得する。デフォルトは HTML 形式（見出し・リスト・テーブル等の構造を保持）。allowlist に登録されたドキュメント、または共通 allowedFolders 配下のドキュメントのみ読み取り可能。",
     inputSchema: {
       fileId: z
         .string()
@@ -203,56 +199,33 @@ server.registerTool(
     },
   },
   async ({ fileId, format }) => {
-    // まず直接allowlistを確認
-    const directAccess = checkDocumentAccess(permConfig, fileId);
-
-    if (!directAccess.allowed) {
-      // フォルダ経由のアクセスを確認
-      const drive = await getDrive();
-      const fileMeta = await drive.files.get({
-        fileId,
-        fields: "id, name, mimeType, parents",
-        supportsAllDrives: true,
-      });
-
-      if (fileMeta.data.mimeType !== GOOGLE_DOCS_MIME_TYPE) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: `指定されたファイルはGoogle Docsではありません (mimeType: ${fileMeta.data.mimeType})。`,
-            },
-          ],
-          isError: true,
-        };
-      }
-
-      const parentIds = fileMeta.data.parents ?? [];
-      const inAllowedFolder = await isDescendantOfAllowedFolder(
-        drive,
-        permConfig,
-        parentIds
-      );
-      if (!inAllowedFolder) {
-        return {
-          content: [{ type: "text" as const, text: directAccess.reason! }],
-          isError: true,
-        };
-      }
+    const { allowed, reason } = await resolveAccess(fileId, false);
+    if (!allowed) {
+      return { content: [{ type: "text" as const, text: reason! }], isError: true };
     }
-
     const drive = await getDrive();
 
-    // ドキュメントのメタデータを取得
+    // mime type 確認
     const meta = await drive.files.get({
       fileId,
-      fields: "id, name, modifiedTime, lastModifyingUser/displayName",
+      fields: "id, name, mimeType, modifiedTime, lastModifyingUser/displayName",
       supportsAllDrives: true,
     });
 
+    if (meta.data.mimeType !== GOOGLE_DOCS_MIME_TYPE) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `指定されたファイルは Google Docs ではありません (mimeType: ${meta.data.mimeType})。`,
+          },
+        ],
+        isError: true,
+      };
+    }
+
     // Google Docs をエクスポート
-    const exportMimeType =
-      format === "text" ? "text/plain" : "text/html";
+    const exportMimeType = format === "text" ? "text/plain" : "text/html";
     const res = await drive.files.export({
       fileId,
       mimeType: exportMimeType,
@@ -285,7 +258,7 @@ server.registerTool(
   "search-documents",
   {
     description:
-      "許可されたフォルダ内のGoogle Docsをファイル名で検索する。レスポンスはTOON形式で返す。",
+      "許可された共通 allowedFolders 内の Google Docs をファイル名で検索する。allowedDocuments も名前一致で含む。レスポンスは TOON 形式で返す。",
     inputSchema: {
       query: z
         .string()
@@ -293,12 +266,13 @@ server.registerTool(
     },
   },
   async ({ query }) => {
-    if (!permConfig) {
+    const { permission, common } = await loadConfigs(configPath);
+    if (!permission && !common) {
       return {
         content: [
           {
             type: "text" as const,
-            text: "allowlistが設定されていません。GOOGLE_MCP_CONFIG 環境変数で設定ファイルを指定してください。",
+            text: "allowlist が設定されていません。GOOGLE_MCP_CONFIG 環境変数で設定ファイルを指定してください。",
           },
         ],
       };
@@ -314,8 +288,9 @@ server.registerTool(
     }> = [];
     const seenIds = new Set<string>();
 
-    // 許可されたフォルダ内を検索（サブフォルダ含む）
-    for (const folder of permConfig.allowedFolders ?? []) {
+    // 共通 allowedFolders 配下を検索 (サブフォルダ含む)
+    const { getAllSubfolderIds } = await import("@shivaduke28/google-mcp-auth");
+    for (const folder of common?.allowedFolders ?? []) {
       const subfolderIds = await getAllSubfolderIds(drive, folder.id);
       const folderIdsToSearch = [folder.id, ...subfolderIds];
 
@@ -346,9 +321,9 @@ server.registerTool(
       }
     }
 
-    // 許可されたドキュメントも名前でフィルタ
+    // allowedDocuments も名前でフィルタ
     const lowerQuery = query.toLowerCase();
-    const matchedDocs = (permConfig.allowedDocuments ?? [])
+    const matchedDocs = (permission?.allowedDocuments ?? [])
       .filter((doc) => doc.name.toLowerCase().includes(lowerQuery))
       .map((doc) => ({
         id: doc.id,

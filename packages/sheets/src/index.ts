@@ -4,14 +4,17 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import { encode } from "@toon-format/toon";
 import { authorize, resolvePath } from "@shivaduke28/google-mcp-auth";
+import { drive as googleDrive } from "@googleapis/drive";
 import { sheets as googleSheets } from "@googleapis/sheets";
-import { loadPermissionConfig, checkAccess } from "./permissions.js";
+import { loadConfigs, checkAccess } from "./permissions.js";
 import { existsSync } from "node:fs";
+import { readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
 const SCOPES = [
   "https://www.googleapis.com/auth/spreadsheets",
+  "https://www.googleapis.com/auth/drive",
 ];
 
 const rawCredentialsPath = process.env.GOOGLE_OAUTH_CREDENTIALS;
@@ -30,23 +33,43 @@ if (!existsSync(credentialsPath)) {
 const resolvedCredentialsPath: string = credentialsPath;
 const resolvedTokensPath: string = process.env.GOOGLE_OAUTH_TOKENS ? resolvePath(process.env.GOOGLE_OAUTH_TOKENS) : join(homedir(), ".config", "google-sheets-mcp", "tokens.json");
 
-// パーミッション設定
-const permConfig = await loadPermissionConfig(configPath);
+// パーミッション設定は tool 呼び出しごとに loadConfigs() を呼んで最新を取得する。
+// (config.json を外部から変更しても即座に反映される)
 
 // lazy auth: ツール呼び出し時に初めて認証する
 let sheetsClient: ReturnType<typeof googleSheets> | null = null;
+let driveClient: ReturnType<typeof googleDrive> | null = null;
+
+async function ensureAuth() {
+  if (sheetsClient && driveClient) return { sheets: sheetsClient, drive: driveClient };
+  const auth = await authorize(resolvedCredentialsPath, resolvedTokensPath, SCOPES);
+  sheetsClient = sheetsClient ?? googleSheets({ version: "v4", auth });
+  driveClient = driveClient ?? googleDrive({ version: "v3", auth });
+  return { sheets: sheetsClient, drive: driveClient };
+}
 
 async function getSheets() {
-  if (!sheetsClient) {
-    const auth = await authorize(resolvedCredentialsPath, resolvedTokensPath, SCOPES);
-    sheetsClient = googleSheets({ version: "v4", auth });
-  }
-  return sheetsClient;
+  return (await ensureAuth()).sheets;
+}
+
+async function getDrive() {
+  return (await ensureAuth()).drive;
+}
+
+/**
+ * tool 呼び出しごとに config.json を再 load して最新権限を返す。
+ * (config を外部から変更しても次の tool 呼び出しで即反映)
+ */
+async function resolveAccess(spreadsheetId: string, requireWrite: boolean) {
+  const { permission, common } = await loadConfigs(configPath);
+  const drive = common?.allowedFolders?.length ? await getDrive() : null;
+  const check = await checkAccess(permission, common, drive, spreadsheetId, requireWrite);
+  return { ...check, permission, common };
 }
 
 const server = new McpServer({
   name: "google-sheets-mcp",
-  version: "1.1.0",
+  version: "2.0.0",
 });
 
 // 1. list-spreadsheets
@@ -57,7 +80,8 @@ server.registerTool(
     inputSchema: {},
   },
   async () => {
-    if (!permConfig) {
+    const { permission, common } = await loadConfigs(configPath);
+    if (!permission && !common) {
       return {
         content: [{
           type: "text",
@@ -66,18 +90,28 @@ server.registerTool(
       };
     }
 
-    const rows = permConfig.allowedSpreadsheets.map((entry) => ({
+    const directRows = (permission?.allowedSpreadsheets ?? []).map((entry) => ({
       id: entry.id,
       name: entry.name,
-      access: entry.access,
+      access: entry.access ?? "readonly",
+      via: "direct",
     }));
+
+    const folderRows = (common?.allowedFolders ?? []).map((entry) => ({
+      id: entry.id,
+      name: entry.name,
+      access: entry.access ?? "readonly",
+      via: "folder",
+    }));
+
+    const rows = [...directRows, ...folderRows];
 
     return {
       content: [{
         type: "text",
         text: rows.length > 0
           ? encode({ spreadsheets: rows })
-          : "allowlistにスプレッドシートが登録されていません。",
+          : "allowlistにスプレッドシート/フォルダが登録されていません。",
       }],
     };
   }
@@ -93,7 +127,7 @@ server.registerTool(
     },
   },
   async ({ spreadsheetId }) => {
-    const { allowed, reason } = checkAccess(permConfig, spreadsheetId, false);
+    const { allowed, reason } = await resolveAccess(spreadsheetId, false);
     if (!allowed) {
       return { content: [{ type: "text", text: reason! }], isError: true };
     }
@@ -132,7 +166,7 @@ server.registerTool(
     },
   },
   async ({ spreadsheetId, range }) => {
-    const { allowed, reason } = checkAccess(permConfig, spreadsheetId, false);
+    const { allowed, reason } = await resolveAccess(spreadsheetId, false);
     if (!allowed) {
       return { content: [{ type: "text", text: reason! }], isError: true };
     }
@@ -168,7 +202,7 @@ server.registerTool(
     },
   },
   async ({ spreadsheetId, range, values }) => {
-    const { allowed, reason } = checkAccess(permConfig, spreadsheetId, true);
+    const { allowed, reason } = await resolveAccess(spreadsheetId, true);
     if (!allowed) {
       return { content: [{ type: "text", text: reason! }], isError: true };
     }
@@ -202,7 +236,7 @@ server.registerTool(
     },
   },
   async ({ spreadsheetId, range, values }) => {
-    const { allowed, reason } = checkAccess(permConfig, spreadsheetId, true);
+    const { allowed, reason } = await resolveAccess(spreadsheetId, true);
     if (!allowed) {
       return { content: [{ type: "text", text: reason! }], isError: true };
     }
@@ -221,6 +255,96 @@ server.registerTool(
         type: "text",
         text: `${res.data.updates?.updatedRows ?? 0}行を追記しました（範囲: ${res.data.updates?.updatedRange ?? range}）。`,
       }],
+    };
+  }
+);
+
+// 6. create-from-template
+server.registerTool(
+  "create-from-template",
+  {
+    description:
+      "テンプレ Spreadsheet をコピーして新規 Spreadsheet を作成し、自動で allowlist に access: readwrite として登録する。テンプレ自身が allowlist に登録されている必要がある (readonly でも可)。作成後は MCP 再起動なしですぐに get-values / update-values で操作可能。",
+    inputSchema: {
+      templateSpreadsheetId: z.string().describe("コピー元テンプレの Spreadsheet ID"),
+      newName: z.string().describe("新規 Spreadsheet の名前"),
+      parentFolderId: z
+        .string()
+        .optional()
+        .describe("新規 Spreadsheet の配置先フォルダ ID (省略時は Drive ルート)"),
+    },
+  },
+  async ({ templateSpreadsheetId, newName, parentFolderId }) => {
+    // 1. テンプレへの read access チェック
+    const tplCheck = await resolveAccess(templateSpreadsheetId, false);
+    if (!tplCheck.allowed) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `テンプレへのアクセスが許可されていません: ${tplCheck.reason}`,
+          },
+        ],
+        isError: true,
+      };
+    }
+
+    // 2. Drive API でコピー
+    const drive = await getDrive();
+    const requestBody: { name: string; parents?: string[] } = { name: newName };
+    if (parentFolderId) requestBody.parents = [parentFolderId];
+
+    const copyRes = await drive.files.copy({
+      fileId: templateSpreadsheetId,
+      requestBody,
+      supportsAllDrives: true,
+    });
+    const newId = copyRes.data.id;
+    if (!newId) {
+      return {
+        content: [{ type: "text", text: "コピー後の Spreadsheet ID 取得に失敗しました。" }],
+        isError: true,
+      };
+    }
+    const webViewLink = `https://docs.google.com/spreadsheets/d/${newId}/edit`;
+
+    // 3. config.json に書き戻し (永続化)
+    // (次の tool 呼び出しで loadConfigs() が再 read するので、メモリ反映用の追加処理は不要)
+    let configWritten = false;
+    if (configPath) {
+      try {
+        const content = await readFile(configPath, "utf-8");
+        const config = JSON.parse(content) as Record<string, unknown>;
+        const sheetsSection = (config.sheets ?? {}) as {
+          allowedSpreadsheets?: Array<{ id: string; name: string; access?: string }>;
+        };
+        sheetsSection.allowedSpreadsheets = sheetsSection.allowedSpreadsheets ?? [];
+        sheetsSection.allowedSpreadsheets.push({
+          id: newId,
+          name: newName,
+          access: "readwrite",
+        });
+        config.sheets = sheetsSection;
+        await writeFile(configPath, JSON.stringify(config, null, 2) + "\n", "utf-8");
+        configWritten = true;
+      } catch (e) {
+        console.error(`config.json 書き戻し失敗: ${e}`);
+      }
+    }
+
+    const persistedNote = configWritten
+      ? "config.json に永続化済み"
+      : configPath
+        ? "config.json 永続化に失敗"
+        : "GOOGLE_MCP_CONFIG 未設定のため永続化されず";
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: `Spreadsheet「${newName}」を作成しました。\n  id: ${newId}\n  url: ${webViewLink}\n  allowlist: access: readwrite で登録済み (${persistedNote})`,
+        },
+      ],
     };
   }
 );

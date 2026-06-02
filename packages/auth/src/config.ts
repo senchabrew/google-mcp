@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 
 export async function loadConfig<T>(
   configPath: string | undefined,
-  key: string
+  key?: string
 ): Promise<T | null> {
   if (!configPath) return null;
 
@@ -15,6 +15,7 @@ export async function loadConfig<T>(
   try {
     const content = await readFile(configPath, "utf-8");
     const parsed = JSON.parse(content) as Record<string, unknown>;
+    if (key === undefined) return parsed as T;
     const section = parsed[key];
     if (section === undefined) return null;
     return section as T;

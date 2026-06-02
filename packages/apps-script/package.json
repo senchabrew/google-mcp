@@ -1,10 +1,10 @@
 {
-  "name": "@shivaduke28/google-sheets-mcp",
-  "version": "1.2.2",
+  "name": "@shivaduke28/google-apps-script-mcp",
+  "version": "1.0.0",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
-    "google-sheets-mcp": "dist/index.js"
+    "google-apps-script-mcp": "dist/index.js"
   },
   "files": [
     "dist"
@@ -15,25 +15,26 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/shivaduke28/google-mcp.git",
-    "directory": "packages/sheets"
+    "directory": "packages/apps-script"
   },
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
     "dev": "tsx src/index.ts",
+    "test": "tsx --test test/*.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "keywords": [
     "mcp",
-    "google-sheets",
+    "google-apps-script",
     "model-context-protocol"
   ],
   "author": "shivaduke",
   "license": "ISC",
-  "description": "Google Sheets MCP server with allowlist-based permission control",
+  "description": "Google Apps Script MCP server with allowlist-based permission control",
   "dependencies": {
     "@googleapis/drive": "^20.1.0",
-    "@googleapis/sheets": "^13.0.1",
+    "@googleapis/script": "^11.0.1",
     "@modelcontextprotocol/sdk": "^1.26.0",
     "@shivaduke28/google-mcp-auth": "workspace:*",
     "@toon-format/toon": "^2.1.0",
