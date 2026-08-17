@@ -8,6 +8,12 @@ importers:
 
   .: {}
 
+  packages/all:
+    dependencies:
+      '@modelcontextprotocol/sdk':
+        specifier: ^1.26.0
+        version: 1.26.0(zod@4.3.6)
+
   packages/apps-script:
     dependencies:
       '@googleapis/drive':
@@ -41,6 +47,9 @@ importers:
 
   packages/auth:
     dependencies:
+      '@toon-format/toon':
+        specifier: ^2.1.0
+        version: 2.1.0
       google-auth-library:
         specifier: ^10.5.0
         version: 10.5.0
@@ -88,6 +97,9 @@ importers:
 
   packages/docs:
     dependencies:
+      '@googleapis/docs':
+        specifier: ^10.0.0
+        version: 10.0.0
       '@googleapis/drive':
         specifier: ^20.1.0
         version: 20.1.0
@@ -150,6 +162,37 @@ importers:
       '@googleapis/sheets':
         specifier: ^13.0.1
         version: 13.0.1
+      '@modelcontextprotocol/sdk':
+        specifier: ^1.26.0
+        version: 1.26.0(zod@4.3.6)
+      '@shivaduke28/google-mcp-auth':
+        specifier: workspace:*
+        version: link:../auth
+      '@toon-format/toon':
+        specifier: ^2.1.0
+        version: 2.1.0
+      zod:
+        specifier: ^4.3.6
+        version: 4.3.6
+    devDependencies:
+      '@types/node':
+        specifier: ^25.2.3
+        version: 25.3.0
+      tsx:
+        specifier: ^4.21.0
+        version: 4.21.0
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
+  packages/slides:
+    dependencies:
+      '@googleapis/drive':
+        specifier: ^20.1.0
+        version: 20.1.0
+      '@googleapis/slides':
+        specifier: ^5.0.1
+        version: 5.0.1
       '@modelcontextprotocol/sdk':
         specifier: ^1.26.0
         version: 1.26.0(zod@4.3.6)
@@ -335,6 +378,10 @@ packages:
     resolution: {integrity: sha512-oo6bikN3dl7n43vvknpPzJlCD8FZbs82h4bZLfDAx1wWRUkIusg6++RFQvOKF46rNXsUePqyVwnFx+8oOOyK1A==}
     engines: {node: '>=12.0.0'}
 
+  '@googleapis/docs@10.0.0':
+    resolution: {integrity: sha512-5ioOb5THY9McFIYBPUNG3T/jVsx+1XIdmox5D+2irPRU7nphzfzU/DUfMWDeVcXRP2eNBCq7tRj8Yk5hSVOP4g==}
+    engines: {node: '>=12.0.0'}
+
   '@googleapis/drive@20.1.0':
     resolution: {integrity: sha512-8/gapeLuZ3igooEGLE1AL3Zp5fjqigZQNmyjehb4QF7JVJh6FXF+72AcQGGsFypwJb2S68HIuQFomHBw4RJSOg==}
     engines: {node: '>=12.0.0'}
@@ -349,6 +396,10 @@ packages:
 
   '@googleapis/sheets@13.0.1':
     resolution: {integrity: sha512-XTYObncN5Rqexc0uITZIN9OWTEyE/ZR2S6c7wAniqHe2oGXW9gcHR9f9hQwPMHFUTHjH7Jkj8SLdt0O0u37y2A==}
+    engines: {node: '>=12.0.0'}
+
+  '@googleapis/slides@5.0.1':
+    resolution: {integrity: sha512-1fGN7Yew0K2IRYQkKWCuSspgudfBII+fWI0BWNHllMr1Yh9t5at9mFYpeQ+57L0hyWiLN3FxX6ksMxbVWjebpg==}
     engines: {node: '>=12.0.0'}
 
   '@hono/node-server@1.19.9':
@@ -1037,6 +1088,12 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
+  '@googleapis/docs@10.0.0':
+    dependencies:
+      googleapis-common: 8.0.1
+    transitivePeerDependencies:
+      - supports-color
+
   '@googleapis/drive@20.1.0':
     dependencies:
       googleapis-common: 8.0.1
@@ -1056,6 +1113,12 @@ snapshots:
       - supports-color
 
   '@googleapis/sheets@13.0.1':
+    dependencies:
+      googleapis-common: 8.0.1
+    transitivePeerDependencies:
+      - supports-color
+
+  '@googleapis/slides@5.0.1':
     dependencies:
       googleapis-common: 8.0.1
     transitivePeerDependencies:

@@ -52,7 +52,37 @@ export function extractBody(
   return "";
 }
 
-function decodeBase64Url(data: string): string {
+export interface AttachmentPart {
+  filename: string;
+  mimeType: string;
+  attachmentId: string;
+  size: number;
+}
+
+/** メッセージ payload から添付ファイルパートを再帰的に収集する */
+export function extractAttachmentParts(
+  payload: gmail_v1.Schema$MessagePart | undefined
+): AttachmentPart[] {
+  if (!payload) return [];
+  const result: AttachmentPart[] = [];
+
+  if (payload.filename && payload.body?.attachmentId) {
+    result.push({
+      filename: payload.filename,
+      mimeType: payload.mimeType ?? "application/octet-stream",
+      attachmentId: payload.body.attachmentId,
+      size: payload.body.size ?? 0,
+    });
+  }
+
+  for (const part of payload.parts ?? []) {
+    result.push(...extractAttachmentParts(part));
+  }
+
+  return result;
+}
+
+export function decodeBase64Url(data: string): string {
   const base64 = data.replace(/-/g, "+").replace(/_/g, "/");
   return Buffer.from(base64, "base64").toString("utf-8");
 }
@@ -65,34 +95,82 @@ function encodeBase64Url(data: string): string {
     .replace(/=+$/, "");
 }
 
-export function buildRawMessage(
-  to: string[],
-  cc: string[],
-  subject: string,
-  body: string,
-  threadId?: string,
-  inReplyTo?: string,
-  references?: string
-): string {
-  const lines: string[] = [];
-  lines.push(`To: ${to.join(", ")}`);
-  if (cc.length > 0) {
-    lines.push(`Cc: ${cc.join(", ")}`);
-  }
-  lines.push(`Subject: =?UTF-8?B?${Buffer.from(subject).toString("base64")}?=`);
-  lines.push("MIME-Version: 1.0");
-  lines.push("Content-Type: text/plain; charset=UTF-8");
-  lines.push("Content-Transfer-Encoding: base64");
+/** 非ASCII文字を含むヘッダー値を RFC 2047 encoded-word にする */
+function encodeHeaderValue(value: string): string {
+  if (/^[\x20-\x7e]*$/.test(value)) return value;
+  return `=?UTF-8?B?${Buffer.from(value).toString("base64")}?=`;
+}
 
+export interface DraftAttachment {
+  filename: string;
+  mimeType: string;
+  contentBase64: string;
+}
+
+export interface RawMessageOptions {
+  to: string[];
+  cc?: string[];
+  bcc?: string[];
+  subject: string;
+  body: string;
+  inReplyTo?: string;
+  references?: string;
+  attachments?: DraftAttachment[];
+}
+
+export function buildRawMessage(opts: RawMessageOptions): string {
+  const { to, cc = [], bcc = [], subject, body, inReplyTo, references, attachments = [] } = opts;
+
+  const headerLines: string[] = [];
+  headerLines.push(`To: ${to.join(", ")}`);
+  if (cc.length > 0) {
+    headerLines.push(`Cc: ${cc.join(", ")}`);
+  }
+  if (bcc.length > 0) {
+    headerLines.push(`Bcc: ${bcc.join(", ")}`);
+  }
+  headerLines.push(`Subject: =?UTF-8?B?${Buffer.from(subject).toString("base64")}?=`);
+  headerLines.push("MIME-Version: 1.0");
   if (inReplyTo) {
-    lines.push(`In-Reply-To: ${inReplyTo}`);
+    headerLines.push(`In-Reply-To: ${inReplyTo}`);
   }
   if (references) {
-    lines.push(`References: ${references}`);
+    headerLines.push(`References: ${references}`);
   }
 
+  const lines: string[] = [...headerLines];
+
+  if (attachments.length === 0) {
+    lines.push("Content-Type: text/plain; charset=UTF-8");
+    lines.push("Content-Transfer-Encoding: base64");
+    lines.push("");
+    lines.push(Buffer.from(body).toString("base64"));
+    return encodeBase64Url(lines.join("\r\n"));
+  }
+
+  // 添付あり: multipart/mixed
+  const boundary = `----=_mcp_${Date.now().toString(36)}_boundary`;
+  lines.push(`Content-Type: multipart/mixed; boundary="${boundary}"`);
+  lines.push("");
+
+  // 本文パート
+  lines.push(`--${boundary}`);
+  lines.push("Content-Type: text/plain; charset=UTF-8");
+  lines.push("Content-Transfer-Encoding: base64");
   lines.push("");
   lines.push(Buffer.from(body).toString("base64"));
+
+  // 添付パート
+  for (const att of attachments) {
+    const filename = encodeHeaderValue(att.filename);
+    lines.push(`--${boundary}`);
+    lines.push(`Content-Type: ${att.mimeType}; name="${filename}"`);
+    lines.push(`Content-Disposition: attachment; filename="${filename}"`);
+    lines.push("Content-Transfer-Encoding: base64");
+    lines.push("");
+    lines.push(att.contentBase64);
+  }
+  lines.push(`--${boundary}--`);
 
   return encodeBase64Url(lines.join("\r\n"));
 }

@@ -1,10 +1,10 @@
 {
-  "name": "@shivaduke28/google-docs-mcp",
-  "version": "1.2.0",
+  "name": "@shivaduke28/google-slides-mcp",
+  "version": "1.0.0",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
-    "google-docs-mcp": "dist/index.js"
+    "google-slides-mcp": "dist/index.js"
   },
   "files": [
     "dist"
@@ -15,26 +15,25 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/shivaduke28/google-mcp.git",
-    "directory": "packages/docs"
+    "directory": "packages/slides"
   },
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
     "dev": "tsx src/index.ts",
-    "test": "tsx --test test/*.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "keywords": [
     "mcp",
-    "google-docs",
+    "google-slides",
     "model-context-protocol"
   ],
   "author": "shivaduke",
   "license": "ISC",
-  "description": "Google Docs MCP server with allowlist-based permission control",
+  "description": "Google Slides MCP server with allowlist-based permission control",
   "dependencies": {
-    "@googleapis/docs": "^10.0.0",
     "@googleapis/drive": "^20.1.0",
+    "@googleapis/slides": "^5.0.1",
     "@modelcontextprotocol/sdk": "^1.26.0",
     "@shivaduke28/google-mcp-auth": "workspace:*",
     "@toon-format/toon": "^2.1.0",

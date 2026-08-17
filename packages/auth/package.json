@@ -23,7 +23,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "google-auth-library": "^10.5.0"
+    "google-auth-library": "^10.5.0",
+    "@toon-format/toon": "^2.1.0"
   },
   "devDependencies": {
     "@googleapis/drive": "^20.1.0",

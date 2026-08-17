@@ -1,15 +1,10 @@
-#!/usr/bin/env node
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { encode } from "@toon-format/toon";
-import { authorize, resolvePath } from "@shivaduke28/google-mcp-auth";
+import { authorize, resolveServiceEnv } from "@shivaduke28/google-mcp-auth";
 import { calendar as googleCalendar } from "@googleapis/calendar";
 import { loadPermissionConfig, checkPermission, denyMessage, PermissionAction, OperationType } from "./permissions.js";
 import { findMeetingUrl } from "./meeting-url.js";
-import { existsSync } from "node:fs";
-import { homedir } from "node:os";
-import { join } from "node:path";
 
 function stripHtml(html: string): string {
   return html
@@ -27,26 +22,13 @@ function stripHtml(html: string): string {
     .trim();
 }
 
-const SCOPES = [
-  "https://www.googleapis.com/auth/calendar.readonly",
-  "https://www.googleapis.com/auth/calendar.events",
-];
-
-const rawCredentialsPath = process.env.GOOGLE_OAUTH_CREDENTIALS;
-const configPath = process.env.GOOGLE_MCP_CONFIG ? resolvePath(process.env.GOOGLE_MCP_CONFIG) : undefined;
-
-if (!rawCredentialsPath) {
-  console.error("GOOGLE_OAUTH_CREDENTIALS 環境変数を設定してください");
-  process.exit(1);
-}
-const credentialsPath = resolvePath(rawCredentialsPath);
-if (!existsSync(credentialsPath)) {
-  console.error(`credentials.json が見つかりません: ${credentialsPath}`);
-  process.exit(1);
-}
-
-const resolvedCredentialsPath: string = credentialsPath;
-const resolvedTokensPath: string = process.env.GOOGLE_OAUTH_TOKENS ? resolvePath(process.env.GOOGLE_OAUTH_TOKENS) : join(homedir(), ".config", "google-calendar-mcp", "tokens.json");
+const { scopes, credentialsPath, tokensPath, configPath } = resolveServiceEnv(
+  "google-calendar-mcp",
+  [
+    "https://www.googleapis.com/auth/calendar.readonly",
+    "https://www.googleapis.com/auth/calendar.events",
+  ]
+);
 
 // パーミッション設定
 const permConfig = await loadPermissionConfig(configPath);
@@ -57,7 +39,7 @@ let selfEmail = "";
 
 async function getCal() {
   if (!calClient) {
-    const auth = await authorize(resolvedCredentialsPath, resolvedTokensPath, SCOPES);
+    const auth = await authorize(credentialsPath, tokensPath, scopes);
     calClient = googleCalendar({ version: "v3", auth });
     try {
       const me = await calClient.calendarList.get({ calendarId: "primary" });
@@ -69,11 +51,7 @@ async function getCal() {
   return calClient;
 }
 
-const server = new McpServer({
-  name: "google-calendar-mcp",
-  version: "1.2.0",
-});
-
+export function register(server: McpServer) {
 server.registerTool(
   "get-current-time",
   {
@@ -382,6 +360,4 @@ server.registerTool(
     };
   }
 );
-
-const transport = new StdioServerTransport();
-await server.connect(transport);
+}

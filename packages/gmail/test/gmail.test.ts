@@ -1,6 +1,11 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { extractHeaders, extractBody, buildRawMessage } from "../src/gmail.js";
+import {
+  extractHeaders,
+  extractBody,
+  extractAttachmentParts,
+  buildRawMessage,
+} from "../src/gmail.js";
 
 describe("extractHeaders", () => {
   it("ヘッダーからFrom/To/Cc/Subject/Dateを抽出する", () => {
@@ -109,56 +114,68 @@ describe("extractBody", () => {
   });
 });
 
+function decodeRaw(raw: string): string {
+  return Buffer.from(raw.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf-8");
+}
+
 describe("buildRawMessage", () => {
   it("基本的なメッセージをbase64urlエンコードする", () => {
-    const raw = buildRawMessage(
-      ["bob@example.com"],
-      [],
-      "Test Subject",
-      "Hello Bob"
-    );
+    const raw = buildRawMessage({
+      to: ["bob@example.com"],
+      subject: "Test Subject",
+      body: "Hello Bob",
+    });
     // base64urlなので+や/や=は含まれない
     assert.ok(!raw.includes("+"));
     assert.ok(!raw.includes("/"));
     assert.ok(!raw.includes("="));
 
     // デコードして中身を確認
-    const decoded = Buffer.from(raw.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf-8");
+    const decoded = decodeRaw(raw);
     assert.ok(decoded.includes("To: bob@example.com"));
     assert.ok(decoded.includes("MIME-Version: 1.0"));
     assert.ok(decoded.includes("Content-Type: text/plain; charset=UTF-8"));
   });
 
   it("CCが含まれる場合Ccヘッダーが付く", () => {
-    const raw = buildRawMessage(
-      ["bob@example.com"],
-      ["carol@example.com", "dave@example.com"],
-      "With CC",
-      "Hello"
-    );
-    const decoded = Buffer.from(raw.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf-8");
+    const raw = buildRawMessage({
+      to: ["bob@example.com"],
+      cc: ["carol@example.com", "dave@example.com"],
+      subject: "With CC",
+      body: "Hello",
+    });
+    const decoded = decodeRaw(raw);
     assert.ok(decoded.includes("Cc: carol@example.com, dave@example.com"));
   });
 
   it("CCが空の場合Ccヘッダーが付かない", () => {
-    const raw = buildRawMessage(
-      ["bob@example.com"],
-      [],
-      "No CC",
-      "Hello"
-    );
-    const decoded = Buffer.from(raw.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf-8");
+    const raw = buildRawMessage({
+      to: ["bob@example.com"],
+      subject: "No CC",
+      body: "Hello",
+    });
+    const decoded = decodeRaw(raw);
     assert.ok(!decoded.includes("Cc:"));
   });
 
+  it("BCCが含まれる場合Bccヘッダーが付く", () => {
+    const raw = buildRawMessage({
+      to: ["bob@example.com"],
+      bcc: ["secret@example.com"],
+      subject: "With BCC",
+      body: "Hello",
+    });
+    const decoded = decodeRaw(raw);
+    assert.ok(decoded.includes("Bcc: secret@example.com"));
+  });
+
   it("日本語の件名がBase64エンコードされる", () => {
-    const raw = buildRawMessage(
-      ["bob@example.com"],
-      [],
-      "テスト件名",
-      "本文"
-    );
-    const decoded = Buffer.from(raw.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf-8");
+    const raw = buildRawMessage({
+      to: ["bob@example.com"],
+      subject: "テスト件名",
+      body: "本文",
+    });
+    const decoded = decodeRaw(raw);
     assert.ok(decoded.includes("Subject: =?UTF-8?B?"));
     // Subject内のbase64をデコードして確認
     const match = decoded.match(/Subject: =\?UTF-8\?B\?([^?]+)\?=/);
@@ -168,17 +185,112 @@ describe("buildRawMessage", () => {
   });
 
   it("返信時にIn-Reply-ToとReferencesヘッダーが付く", () => {
-    const raw = buildRawMessage(
-      ["bob@example.com"],
-      [],
-      "Re: Test",
-      "Reply body",
-      "thread123",
-      "<msg-id-123@mail.gmail.com>",
-      "<msg-id-000@mail.gmail.com> <msg-id-123@mail.gmail.com>"
-    );
-    const decoded = Buffer.from(raw.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf-8");
+    const raw = buildRawMessage({
+      to: ["bob@example.com"],
+      subject: "Re: Test",
+      body: "Reply body",
+      inReplyTo: "<msg-id-123@mail.gmail.com>",
+      references: "<msg-id-000@mail.gmail.com> <msg-id-123@mail.gmail.com>",
+    });
+    const decoded = decodeRaw(raw);
     assert.ok(decoded.includes("In-Reply-To: <msg-id-123@mail.gmail.com>"));
     assert.ok(decoded.includes("References: <msg-id-000@mail.gmail.com> <msg-id-123@mail.gmail.com>"));
+  });
+
+  it("添付ありの場合multipart/mixedになり本文と添付パートを含む", () => {
+    const pdfContent = Buffer.from("%PDF-1.4 dummy").toString("base64");
+    const raw = buildRawMessage({
+      to: ["bob@example.com"],
+      subject: "With attachment",
+      body: "See attached",
+      attachments: [
+        { filename: "quote.pdf", mimeType: "application/pdf", contentBase64: pdfContent },
+      ],
+    });
+    const decoded = decodeRaw(raw);
+    assert.ok(decoded.includes("Content-Type: multipart/mixed; boundary="));
+    assert.ok(decoded.includes("Content-Type: text/plain; charset=UTF-8"));
+    assert.ok(decoded.includes('Content-Type: application/pdf; name="quote.pdf"'));
+    assert.ok(decoded.includes('Content-Disposition: attachment; filename="quote.pdf"'));
+    assert.ok(decoded.includes(pdfContent));
+    // 終端boundary
+    assert.ok(/--\r\n?$|--$/.test(decoded.trim()));
+  });
+
+  it("日本語ファイル名の添付はencoded-wordになる", () => {
+    const raw = buildRawMessage({
+      to: ["bob@example.com"],
+      subject: "With JP attachment",
+      body: "See attached",
+      attachments: [
+        { filename: "見積書.pdf", mimeType: "application/pdf", contentBase64: "QUJD" },
+      ],
+    });
+    const decoded = decodeRaw(raw);
+    assert.ok(decoded.includes('filename="=?UTF-8?B?'));
+  });
+
+  it("添付なしの場合はmultipartにならない(従来形式)", () => {
+    const raw = buildRawMessage({
+      to: ["bob@example.com"],
+      subject: "Plain",
+      body: "Hello",
+    });
+    const decoded = decodeRaw(raw);
+    assert.ok(!decoded.includes("multipart/mixed"));
+  });
+});
+
+describe("extractAttachmentParts", () => {
+  it("添付パートを収集する", () => {
+    const payload = {
+      mimeType: "multipart/mixed",
+      parts: [
+        { mimeType: "text/plain", filename: "", body: { data: "aGk" } },
+        {
+          mimeType: "application/pdf",
+          filename: "report.pdf",
+          body: { attachmentId: "att-1", size: 1234 },
+        },
+      ],
+    };
+    const result = extractAttachmentParts(payload);
+    assert.equal(result.length, 1);
+    assert.equal(result[0].filename, "report.pdf");
+    assert.equal(result[0].attachmentId, "att-1");
+    assert.equal(result[0].size, 1234);
+  });
+
+  it("ネストしたパートからも収集する", () => {
+    const payload = {
+      mimeType: "multipart/mixed",
+      parts: [
+        {
+          mimeType: "multipart/alternative",
+          parts: [
+            {
+              mimeType: "image/png",
+              filename: "image.png",
+              body: { attachmentId: "att-2", size: 10 },
+            },
+          ],
+        },
+      ],
+    };
+    const result = extractAttachmentParts(payload);
+    assert.equal(result.length, 1);
+    assert.equal(result[0].filename, "image.png");
+  });
+
+  it("attachmentIdのないfilename付きパートは含めない", () => {
+    const payload = {
+      mimeType: "multipart/mixed",
+      parts: [{ mimeType: "text/plain", filename: "inline.txt", body: { data: "aGk" } }],
+    };
+    assert.equal(extractAttachmentParts(payload).length, 0);
+  });
+
+  it("payloadがundefinedなら空配列", () => {
+    assert.equal(extractAttachmentParts(undefined).length, 0);
   });
 });
