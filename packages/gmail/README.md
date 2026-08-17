@@ -1,4 +1,4 @@
-# @shivaduke28/gmail-mcp
+# @senchabrew/gmail-mcp
 
 Gmail API の MCP (Model Context Protocol) サーバー。
 
@@ -36,7 +36,7 @@ OAuth スコープは `gmail.modify` のみ。送信・削除はできません�
   "mcpServers": {
     "gmail": {
       "command": "npx",
-      "args": ["-y", "@shivaduke28/gmail-mcp"],
+      "args": ["-y", "@senchabrew/gmail-mcp"],
       "env": {
         "GOOGLE_OAUTH_CREDENTIALS": "/path/to/credentials.json"
       }
@@ -97,9 +97,9 @@ label:INBOX
 
 ```bash
 pnpm install
-pnpm --filter @shivaduke28/gmail-mcp dev          # tsx で開発実行
-pnpm --filter @shivaduke28/gmail-mcp build        # tsc でビルド
-pnpm --filter @shivaduke28/gmail-mcp typecheck    # 型チェック
+pnpm --filter @senchabrew/gmail-mcp dev          # tsx で開発実行
+pnpm --filter @senchabrew/gmail-mcp build        # tsc でビルド
+pnpm --filter @senchabrew/gmail-mcp typecheck    # 型チェック
 ```
 
 ## License

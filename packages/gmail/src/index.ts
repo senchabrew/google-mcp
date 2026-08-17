@@ -7,7 +7,7 @@ import {
   textResult,
   toonResult,
   errorResult,
-} from "@shivaduke28/google-mcp-auth";
+} from "@senchabrew/google-mcp-auth";
 import { gmail as googleGmail } from "@googleapis/gmail";
 import {
   extractHeaders,

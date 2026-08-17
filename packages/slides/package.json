@@ -1,5 +1,5 @@
 {
-  "name": "@shivaduke28/google-slides-mcp",
+  "name": "@senchabrew/google-slides-mcp",
   "version": "1.0.0",
   "type": "module",
   "main": "dist/index.js",
@@ -35,7 +35,7 @@
     "@googleapis/drive": "^20.1.0",
     "@googleapis/slides": "^5.0.1",
     "@modelcontextprotocol/sdk": "^1.26.0",
-    "@shivaduke28/google-mcp-auth": "workspace:*",
+    "@senchabrew/google-mcp-auth": "workspace:*",
     "@toon-format/toon": "^2.1.0",
     "zod": "^4.3.6"
   },

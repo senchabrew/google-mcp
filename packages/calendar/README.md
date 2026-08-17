@@ -1,4 +1,4 @@
-# @shivaduke28/google-calendar-mcp
+# @senchabrew/google-calendar-mcp
 
 Google Calendar API の MCP (Model Context Protocol) サーバー。
 
@@ -35,7 +35,7 @@ Google Calendar API の MCP (Model Context Protocol) サーバー。
   "mcpServers": {
     "google-calendar": {
       "command": "npx",
-      "args": ["-y", "@shivaduke28/google-calendar-mcp"],
+      "args": ["-y", "@senchabrew/google-calendar-mcp"],
       "env": {
         "GOOGLE_OAUTH_CREDENTIALS": "/path/to/credentials.json",
         "GOOGLE_MCP_CONFIG": "/path/to/google-mcp-config.json"
@@ -111,9 +111,9 @@ PKCE (Proof Key for Code Exchange) に対応しています。
 
 ```bash
 pnpm install
-pnpm --filter @shivaduke28/google-calendar-mcp dev          # tsx で開発実行
-pnpm --filter @shivaduke28/google-calendar-mcp build        # tsc でビルド
-pnpm --filter @shivaduke28/google-calendar-mcp typecheck    # 型チェック
+pnpm --filter @senchabrew/google-calendar-mcp dev          # tsx で開発実行
+pnpm --filter @senchabrew/google-calendar-mcp build        # tsc でビルド
+pnpm --filter @senchabrew/google-calendar-mcp typecheck    # 型チェック
 ```
 
 ## License

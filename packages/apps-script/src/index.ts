@@ -6,7 +6,7 @@ import {
   textResult,
   toonResult,
   errorResult,
-} from "@shivaduke28/google-mcp-auth";
+} from "@senchabrew/google-mcp-auth";
 import { drive as googleDrive } from "@googleapis/drive";
 import { script as googleScript } from "@googleapis/script";
 import { loadConfigs, checkAccess } from "./permissions.js";

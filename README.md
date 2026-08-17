@@ -55,7 +55,7 @@ Google API の MCP (Model Context Protocol) サーバー群をまとめた pnpm 
   "mcpServers": {
     "google-calendar": {
       "command": "npx",
-      "args": ["-y", "@shivaduke28/google-calendar-mcp"],
+      "args": ["-y", "@senchabrew/google-calendar-mcp"],
       "env": {
         "GOOGLE_OAUTH_CREDENTIALS": "/path/to/credentials.json",
         "GOOGLE_MCP_CONFIG": "/path/to/config.json"
@@ -63,14 +63,14 @@ Google API の MCP (Model Context Protocol) サーバー群をまとめた pnpm 
     },
     "gmail": {
       "command": "npx",
-      "args": ["-y", "@shivaduke28/gmail-mcp"],
+      "args": ["-y", "@senchabrew/gmail-mcp"],
       "env": {
         "GOOGLE_OAUTH_CREDENTIALS": "/path/to/credentials.json"
       }
     },
     "google-sheets": {
       "command": "npx",
-      "args": ["-y", "@shivaduke28/google-sheets-mcp"],
+      "args": ["-y", "@senchabrew/google-sheets-mcp"],
       "env": {
         "GOOGLE_OAUTH_CREDENTIALS": "/path/to/credentials.json",
         "GOOGLE_MCP_CONFIG": "/path/to/config.json"
@@ -78,7 +78,7 @@ Google API の MCP (Model Context Protocol) サーバー群をまとめた pnpm 
     },
     "google-docs": {
       "command": "npx",
-      "args": ["-y", "@shivaduke28/google-docs-mcp"],
+      "args": ["-y", "@senchabrew/google-docs-mcp"],
       "env": {
         "GOOGLE_OAUTH_CREDENTIALS": "/path/to/credentials.json",
         "GOOGLE_MCP_CONFIG": "/path/to/config.json"

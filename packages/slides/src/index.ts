@@ -7,7 +7,7 @@ import {
   resolveServiceEnv,
   textResult,
   errorResult,
-} from "@shivaduke28/google-mcp-auth";
+} from "@senchabrew/google-mcp-auth";
 import { drive as googleDrive } from "@googleapis/drive";
 import { slides as googleSlides } from "@googleapis/slides";
 import type { slides_v1 } from "@googleapis/slides";
@@ -504,7 +504,7 @@ server.registerTool(
     const seenIds = new Set<string>();
 
     // 共通 allowedFolders 配下を検索 (サブフォルダ含む)
-    const { getAllSubfolderIds } = await import("@shivaduke28/google-mcp-auth");
+    const { getAllSubfolderIds } = await import("@senchabrew/google-mcp-auth");
     for (const folder of common?.allowedFolders ?? []) {
       const subfolderIds = await getAllSubfolderIds(drive, folder.id);
       const folderIdsToSearch = [folder.id, ...subfolderIds];

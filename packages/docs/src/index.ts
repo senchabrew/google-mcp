@@ -7,7 +7,7 @@ import {
   textResult,
   toonResult,
   errorResult,
-} from "@shivaduke28/google-mcp-auth";
+} from "@senchabrew/google-mcp-auth";
 import { drive as googleDrive } from "@googleapis/drive";
 import { docs as googleDocs } from "@googleapis/docs";
 import { loadConfigs, checkAccess, checkFolderAccess } from "./permissions.js";
@@ -642,7 +642,7 @@ if (isMain) {
   const { StdioServerTransport } = await import(
     "@modelcontextprotocol/sdk/server/stdio.js"
   );
-  const server = new McpServer({ name: "google-docs", version: "1.2.0" });
+  const server = new McpServer({ name: "google-docs", version: "1.3.0" });
   register(server);
   await server.connect(new StdioServerTransport());
 }

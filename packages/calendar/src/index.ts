@@ -1,7 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { encode } from "@toon-format/toon";
-import { authorize, resolveServiceEnv } from "@shivaduke28/google-mcp-auth";
+import { authorize, resolveServiceEnv } from "@senchabrew/google-mcp-auth";
 import { calendar as googleCalendar } from "@googleapis/calendar";
 import { loadPermissionConfig, checkPermission, denyMessage, PermissionAction, OperationType } from "./permissions.js";
 import { findMeetingUrl } from "./meeting-url.js";

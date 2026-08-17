@@ -1,6 +1,6 @@
 {
-  "name": "@shivaduke28/google-mcp-auth",
-  "version": "1.3.0",
+  "name": "@senchabrew/google-mcp-auth",
+  "version": "1.4.0",
   "type": "module",
   "main": "dist/index.js",
   "files": [

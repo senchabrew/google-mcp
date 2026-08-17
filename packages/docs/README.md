@@ -1,4 +1,4 @@
-# @shivaduke28/google-docs-mcp
+# @senchabrew/google-docs-mcp
 
 Google Docs の MCP サーバー。allowlist ベースのアクセス制御で、許可されたドキュメントとフォルダ内のドキュメントのみ読み取り可能。
 
@@ -15,7 +15,7 @@ Google Drive API を有効化してください（[Google Cloud Console](https:/
   "mcpServers": {
     "google-docs": {
       "command": "npx",
-      "args": ["-y", "@shivaduke28/google-docs-mcp"],
+      "args": ["-y", "@senchabrew/google-docs-mcp"],
       "env": {
         "GOOGLE_OAUTH_CREDENTIALS": "/path/to/credentials.json",
         "GOOGLE_MCP_CONFIG": "/path/to/config.json"

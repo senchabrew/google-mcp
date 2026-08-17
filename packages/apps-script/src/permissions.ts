@@ -5,11 +5,11 @@ import {
   hasAccess,
   loadCommonConfig,
   loadConfig,
-} from "@shivaduke28/google-mcp-auth";
+} from "@senchabrew/google-mcp-auth";
 import type {
   CommonConfig,
   ResourceEntry,
-} from "@shivaduke28/google-mcp-auth";
+} from "@senchabrew/google-mcp-auth";
 import type { drive_v3 } from "@googleapis/drive";
 
 /** apps-script 固有の access level (deny < readonly < readwrite < execute) */

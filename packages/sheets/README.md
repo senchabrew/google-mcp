@@ -1,4 +1,4 @@
-# @shivaduke28/google-sheets-mcp
+# @senchabrew/google-sheets-mcp
 
 Google Sheets API の MCP (Model Context Protocol) サーバー。
 
@@ -35,7 +35,7 @@ allowlist 方式のパーミッション制御により、アクセス可能な�
   "mcpServers": {
     "google-sheets": {
       "command": "npx",
-      "args": ["-y", "@shivaduke28/google-sheets-mcp"],
+      "args": ["-y", "@senchabrew/google-sheets-mcp"],
       "env": {
         "GOOGLE_OAUTH_CREDENTIALS": "/path/to/credentials.json",
         "GOOGLE_MCP_CONFIG": "/path/to/google-mcp-config.json"
@@ -116,9 +116,9 @@ PKCE (Proof Key for Code Exchange) に対応しています。
 
 ```bash
 pnpm install
-pnpm --filter @shivaduke28/google-sheets-mcp dev          # tsx で開発実行
-pnpm --filter @shivaduke28/google-sheets-mcp build        # tsc でビルド
-pnpm --filter @shivaduke28/google-sheets-mcp typecheck    # 型チェック
+pnpm --filter @senchabrew/google-sheets-mcp dev          # tsx で開発実行
+pnpm --filter @senchabrew/google-sheets-mcp build        # tsc でビルド
+pnpm --filter @senchabrew/google-sheets-mcp typecheck    # 型チェック
 ```
 
 ## License

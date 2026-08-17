@@ -15,7 +15,7 @@ npm に変更を publish する手順。
 6. **コミット**: `"{パッケージ名} v{バージョン}: {変更内容}"` 形式
 7. **push**: main ブランチに push（shivaduke に確認）
 8. **npm publish**:
-   - auth が変更された場合は auth を先に publish する: `pnpm publish --filter @shivaduke28/google-mcp-auth`
-   - その後、残りのパッケージを publish する: `pnpm publish --filter @shivaduke28/google-calendar-mcp --filter @shivaduke28/gmail-mcp --filter @shivaduke28/google-sheets-mcp`
+   - auth が変更された場合は auth を先に publish する: `pnpm publish --filter @senchabrew/google-mcp-auth`
+   - その後、残りのパッケージを publish する: `pnpm publish --filter @senchabrew/google-calendar-mcp --filter @senchabrew/gmail-mcp --filter @senchabrew/google-sheets-mcp`
    - 変更がないパッケージは publish しない
-9. **確認**: `npm view @shivaduke28/<パッケージ名> version` でバージョンが更新されていることを確認
+9. **確認**: `npm view @senchabrew/<パッケージ名> version` でバージョンが更新されていることを確認

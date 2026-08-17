@@ -25,7 +25,7 @@ importers:
       '@modelcontextprotocol/sdk':
         specifier: ^1.26.0
         version: 1.26.0(zod@4.3.6)
-      '@shivaduke28/google-mcp-auth':
+      '@senchabrew/google-mcp-auth':
         specifier: workspace:*
         version: link:../auth
       '@toon-format/toon':
@@ -75,7 +75,7 @@ importers:
       '@modelcontextprotocol/sdk':
         specifier: ^1.26.0
         version: 1.26.0(zod@4.3.6)
-      '@shivaduke28/google-mcp-auth':
+      '@senchabrew/google-mcp-auth':
         specifier: workspace:*
         version: link:../auth
       '@toon-format/toon':
@@ -106,7 +106,7 @@ importers:
       '@modelcontextprotocol/sdk':
         specifier: ^1.26.0
         version: 1.26.0(zod@4.3.6)
-      '@shivaduke28/google-mcp-auth':
+      '@senchabrew/google-mcp-auth':
         specifier: workspace:*
         version: link:../auth
       '@toon-format/toon':
@@ -134,7 +134,7 @@ importers:
       '@modelcontextprotocol/sdk':
         specifier: ^1.26.0
         version: 1.26.0(zod@4.3.6)
-      '@shivaduke28/google-mcp-auth':
+      '@senchabrew/google-mcp-auth':
         specifier: workspace:*
         version: link:../auth
       '@toon-format/toon':
@@ -165,7 +165,7 @@ importers:
       '@modelcontextprotocol/sdk':
         specifier: ^1.26.0
         version: 1.26.0(zod@4.3.6)
-      '@shivaduke28/google-mcp-auth':
+      '@senchabrew/google-mcp-auth':
         specifier: workspace:*
         version: link:../auth
       '@toon-format/toon':
@@ -196,7 +196,7 @@ importers:
       '@modelcontextprotocol/sdk':
         specifier: ^1.26.0
         version: 1.26.0(zod@4.3.6)
-      '@shivaduke28/google-mcp-auth':
+      '@senchabrew/google-mcp-auth':
         specifier: workspace:*
         version: link:../auth
       '@toon-format/toon':

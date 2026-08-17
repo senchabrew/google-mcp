@@ -26,8 +26,8 @@ pnpm -r test      # 全パッケージテスト
 
 個別パッケージ:
 ```bash
-pnpm --filter @shivaduke28/google-calendar-mcp build
-pnpm --filter @shivaduke28/google-calendar-mcp test
+pnpm --filter @senchabrew/google-calendar-mcp build
+pnpm --filter @senchabrew/google-calendar-mcp test
 ```
 
 ## アーキテクチャ
@@ -42,7 +42,7 @@ pnpm --filter @shivaduke28/google-calendar-mcp test
 
 ## パッケージ間の依存
 
-- calendar, gmail, sheets → auth（`@shivaduke28/google-mcp-auth` を `workspace:*` で参照）
+- calendar, gmail, sheets → auth（`@senchabrew/google-mcp-auth` を `workspace:*` で参照）
 - auth は `declaration: true` で型定義を出力
 
 ## テスト

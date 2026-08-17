@@ -1,4 +1,4 @@
-# @shivaduke28/google-slides-mcp
+# @senchabrew/google-slides-mcp
 
 Google Slides の MCP サーバー。allowlist ベースのアクセス制御で、許可されたプレゼンテーションとフォルダ内のプレゼンテーションのみ読み取り可能。
 
@@ -15,7 +15,7 @@ Google Drive API と Google Slides API を有効化してください（[Google 
   "mcpServers": {
     "google-slides": {
       "command": "npx",
-      "args": ["-y", "@shivaduke28/google-slides-mcp"],
+      "args": ["-y", "@senchabrew/google-slides-mcp"],
       "env": {
         "GOOGLE_OAUTH_CREDENTIALS": "/path/to/credentials.json",
         "GOOGLE_MCP_CONFIG": "/path/to/config.json"

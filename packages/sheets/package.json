@@ -1,6 +1,6 @@
 {
-  "name": "@shivaduke28/google-sheets-mcp",
-  "version": "1.3.0",
+  "name": "@senchabrew/google-sheets-mcp",
+  "version": "1.4.0",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
@@ -35,7 +35,7 @@
     "@googleapis/drive": "^20.1.0",
     "@googleapis/sheets": "^13.0.1",
     "@modelcontextprotocol/sdk": "^1.26.0",
-    "@shivaduke28/google-mcp-auth": "workspace:*",
+    "@senchabrew/google-mcp-auth": "workspace:*",
     "@toon-format/toon": "^2.1.0",
     "zod": "^4.3.6"
   },

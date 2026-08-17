@@ -1,4 +1,4 @@
-import { loadConfig } from "@shivaduke28/google-mcp-auth";
+import { loadConfig } from "@senchabrew/google-mcp-auth";
 
 export const PermissionAction = {
   Allow: "allow",

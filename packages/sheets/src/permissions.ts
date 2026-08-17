@@ -4,12 +4,12 @@ import {
   findContainingAllowedFolder,
   loadCommonConfig,
   loadConfig,
-} from "@shivaduke28/google-mcp-auth";
+} from "@senchabrew/google-mcp-auth";
 import type {
   CommonConfig,
   ResourceEntry,
   StandardAccess,
-} from "@shivaduke28/google-mcp-auth";
+} from "@senchabrew/google-mcp-auth";
 import type { drive_v3 } from "@googleapis/drive";
 
 export type SpreadsheetEntry = ResourceEntry<StandardAccess>;
