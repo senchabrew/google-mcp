@@ -17,17 +17,22 @@ Google API の MCP (Model Context Protocol) サーバー群をまとめた pnpm 
 
 ## Tools
 
-| サービス | 読み取り | 書き込み | 意図的に提供しない操作 |
-|---|---|---|---|
-| Sheets | list / get / get-values / export-pdf | update / append / clear-values / delete-rows / add-sheet / create-spreadsheet / create-from-template | シート削除・ファイル削除 |
-| Docs | list / list-folder / read / search / get-comments / export-pdf | create-document / update-document (全置換) / replace-text (部分編集) / reply-comment / resolve-comment | ファイル削除 |
-| Slides | list / list-folder / read / raw-structure / thumbnail / search / export-pdf | create / create-from-template / replace-text / batch-update | ファイル削除 |
-| Apps Script | list / get-project / get-content / list-executions (実行履歴) | update-content / run-function (最新保存コードを実行) | **デプロイ・バージョン管理**（意図的に非提供） |
-| Calendar | get-current-time / list-events / freebusy | create / update / delete-event | — |
-| Gmail | search / get-messages / get-threads / download-attachments / list-labels | create-draft (BCC・添付対応) / modify-labels | **送信**（下書きまで。送信は人間が行う） |
+| サービス | 読み取り | 書き込み |
+|---|---|---|
+| Sheets | list / get / get-values / export-pdf | update / append / clear-values / delete-rows / add-sheet / create-spreadsheet 等 |
+| Docs | list / read / search / get-comments / export-pdf | create-document / update-document (全置換) / replace-text (部分編集) / reply-comment 等 |
+| Slides | list / read / raw-structure / thumbnail / search / export-pdf | create / create-from-template / replace-text / batch-update |
+| Apps Script | list / get-project / get-content / list-executions | update-content / run-function |
+| Calendar | get-current-time / list-events / freebusy | create / update / delete-event |
+| Gmail | search / get-messages / get-threads / download-attachments / list-labels | create-draft (BCC・添付対応) / modify-labels |
 
-書き込みは allowlist（後述の Config）で `access: readwrite` が付いたリソースに限定される。
-Apps Script の `run-function` はさらに強い `access: execute` の個別登録が必要（folder 継承不可）。
+意図的に提供しない操作:
+
+- ファイル削除（Sheets のシート削除含む）
+- Apps Script のデプロイ・バージョン管理
+- Gmail の送信（下書き作成まで。送信は人間が行う）
+
+書き込みは allowlist（後述の Config）で `access: readwrite` が付いたリソースに限定される。Apps Script の `run-function` はさらに強い `access: execute` が必要（詳細は Config の「access レベル」）。
 
 ## Setup
 
@@ -96,7 +101,7 @@ Apps Script の `run-function` はさらに強い `access: execute` の個別登
 
 ### 4. 認証
 
-初回起動時にブラウザが開き、Google アカウントでの認証を求められます。認証後、トークンは `~/.config/<package>-mcp/tokens.json` に自動保存されます。PKCE (Proof Key for Code Exchange) に対応。
+初回起動時にブラウザが開き、Google アカウントでの認証（PKCE 対応）を求められます。認証後、トークンは `~/.config/<package>-mcp/tokens.json` に自動保存されます。
 
 ## Config
 
@@ -161,18 +166,14 @@ Apps Script の `run-function` はさらに強い `access: execute` の個別登
 | `readwrite` | ✓ | ✓ | ✗ | |
 | `execute` | ✓ | ✓ | ✓ | apps-script 専用。**個別登録のみ**（フォルダ継承不可） |
 
+allowlist 未設定時は、読み取りは全許可、書き込み・実行は全拒否（`readwrite` / `execute` の明示登録が必須）。
+
 ### アクセス判定の順序
 
 1. **個別登録**（`allowedSpreadsheets` 等）にヒット → そのエントリの `access` で判定。**フォルダ設定より優先**（readonly フォルダ内の特定ファイルだけ readwrite にする等）
 2. ヒットしなければ、親フォルダを遡って `allowedFolders` の配下か確認 → フォルダの `access` を継承
 3. どちらにも該当しなければ拒否
 
-### allowlist 未設定時のデフォルト
-
-| 操作 | 挙動 |
-|---|---|
-| 読み取り | 全許可 |
-| 書き込み・実行 | 全拒否（`readwrite` / `execute` の明示登録が必須） |
 
 ## .mcpb 配布
 
