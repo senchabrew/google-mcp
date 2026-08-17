@@ -139,16 +139,45 @@ Apps Script の `run-function` はさらに強い `access: execute` の個別登
 }
 ```
 
-- 各パッケージは自分のキー（`calendar`, `sheets`, `docs`, `slides`, `apps-script`）のみを読み込む
-- ルートの `allowedFolders` は **全サービス共通** のフォルダ許可。登録フォルダの配下（子孫フォルダ含む）が対象になり、フォルダの `access` を継承する
-- 個別登録がフォルダ設定より優先される（readonly フォルダ内の特定ファイルだけ readwrite にする等）
-- `access` は `deny` / `readonly` (デフォルト) / `readwrite`、apps-script のみ `execute` あり（execute は folder 継承不可）
-- allowlist 未設定の場合、読み取りは全許可・書き込みは全拒否
+各パッケージは自分のキーのみを読み込む。ルートの `allowedFolders` だけは**全サービス共通**。
 
-## .mcpb 配布（社内向け）
+### 設定キーと対象リソース
+
+| キー | 対象 | 効く範囲 |
+|---|---|---|
+| `sheets.allowedSpreadsheets` | Spreadsheet | 個別ファイル |
+| `docs.allowedDocuments` | Docs | 個別ファイル |
+| `slides.allowedPresentations` | Slides | 個別ファイル |
+| `apps-script.allowedProjects` | Apps Script プロジェクト | 個別プロジェクト |
+| `allowedFolders`（ルート） | Drive フォルダ | 配下の全ファイル（子孫フォルダ含む）に `access` を継承 |
+| `calendar` | カレンダー操作 | allowlist ではなくドメインベース（self_only / internal / external × allow / deny） |
+
+### access レベル
+
+| access | 参照 | 更新・作成 | 関数実行 | 備考 |
+|---|:-:|:-:|:-:|---|
+| `deny` | ✗ | ✗ | ✗ | readwrite フォルダ内の特定ファイルだけ除外する用途 |
+| `readonly`（省略時） | ✓ | ✗ | ✗ | |
+| `readwrite` | ✓ | ✓ | ✗ | |
+| `execute` | ✓ | ✓ | ✓ | apps-script 専用。**個別登録のみ**（フォルダ継承不可） |
+
+### アクセス判定の順序
+
+1. **個別登録**（`allowedSpreadsheets` 等）にヒット → そのエントリの `access` で判定。**フォルダ設定より優先**（readonly フォルダ内の特定ファイルだけ readwrite にする等）
+2. ヒットしなければ、親フォルダを遡って `allowedFolders` の配下か確認 → フォルダの `access` を継承
+3. どちらにも該当しなければ拒否
+
+### allowlist 未設定時のデフォルト
+
+| 操作 | 挙動 |
+|---|---|
+| 読み取り | 全許可 |
+| 書き込み・実行 | 全拒否（`readwrite` / `execute` の明示登録が必須） |
+
+## .mcpb 配布
 
 全サービスを 1 つにまとめた Claude Desktop 拡張は `packages/all` をエントリに esbuild で単一ファイル化し、
-credentials 同封で `.mcpb` にパックして配布する（パッケージングは別リポジトリ。credentials を含むため公開リポジトリには置かない）。
+credentials 同封で `.mcpb` にパックして配布する（パッケージングはこのリポジトリの管理外。credentials を含むため公開リポジトリには置かない）。
 
 ## Development
 
