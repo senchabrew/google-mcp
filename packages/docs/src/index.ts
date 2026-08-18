@@ -557,87 +557,7 @@ server.registerTool(
   }
 );
 
-/** タブIDで対象タブを再帰的に探す。tabId未指定なら最初のタブを返す */
-function findTab(
-  tabs: docs_v1.Schema$Tab[] | undefined,
-  tabId: string | undefined
-): docs_v1.Schema$Tab | undefined {
-  for (const tab of tabs ?? []) {
-    if (!tabId || tab.tabProperties?.tabId === tabId) return tab;
-    const child = findTab(tab.childTabs ?? undefined, tabId);
-    if (child) return child;
-  }
-  return undefined;
-}
-
-/** タブ本文の末尾index（最終改行の直前）を返す */
-async function getTabEndIndex(fileId: string, tabId: string | undefined): Promise<{ endIndex: number; tabId?: string } | null> {
-  const docsApi = await getDocs();
-  const doc = await docsApi.documents.get({ documentId: fileId, includeTabsContent: true });
-  const tab = findTab(doc.data.tabs ?? undefined, tabId);
-  const content = tab?.documentTab?.body?.content;
-  if (!content?.length) return null;
-  const endIndex = (content[content.length - 1].endIndex ?? 1) - 1;
-  return { endIndex, tabId: tab?.tabProperties?.tabId ?? undefined };
-}
-
-// 11. insert-code-block
-server.registerTool(
-  "insert-code-block",
-  {
-    description:
-      "Google Docs の末尾にコードブロック風の書式（等幅フォント+グレー背景）でテキストを挿入する。Docs APIはネイティブのコードブロック（スマートチップ）に未対応のため、スタイルで再現する。allowlist で access: readwrite が付いたドキュメントのみ。",
-    inputSchema: {
-      fileId: z.string().describe("ドキュメントのファイルID"),
-      code: z.string().describe("挿入するコード"),
-      tabId: z.string().optional().describe("対象タブID（省略時は最初のタブ。list-tabsで取得）"),
-    },
-  },
-  async ({ fileId, code, tabId }: { fileId: string; code: string; tabId?: string }) => {
-    const { allowed, reason } = await resolveAccess(fileId, true);
-    if (!allowed) return errorResult(reason!);
-
-    const mimeError = await assertDocsMimeType(fileId);
-    if (mimeError) return errorResult(mimeError);
-
-    const pos = await getTabEndIndex(fileId, tabId);
-    if (!pos) return errorResult("挿入位置の特定に失敗しました（タブが見つからないか本文が空です）。");
-
-    const text = `\n${code.endsWith("\n") ? code : code + "\n"}`;
-    const start = pos.endIndex + 1;
-    const end = start + text.length - 1;
-    const tabRef = pos.tabId ? { tabId: pos.tabId } : {};
-
-    const docsApi = await getDocs();
-    await docsApi.documents.batchUpdate({
-      documentId: fileId,
-      requestBody: {
-        requests: [
-          { insertText: { location: { index: pos.endIndex, ...tabRef }, text } },
-          {
-            updateTextStyle: {
-              range: { startIndex: start, endIndex: end, ...tabRef },
-              textStyle: { weightedFontFamily: { fontFamily: "Courier New" }, fontSize: { magnitude: 10, unit: "PT" } },
-              fields: "weightedFontFamily,fontSize",
-            },
-          },
-          {
-            updateParagraphStyle: {
-              range: { startIndex: start, endIndex: end, ...tabRef },
-              paragraphStyle: {
-                shading: { backgroundColor: { color: { rgbColor: { red: 0.95, green: 0.95, blue: 0.95 } } } },
-              },
-              fields: "shading",
-            },
-          },
-        ],
-      },
-    });
-    return textResult(`コードブロック（${code.length}文字）を末尾に挿入しました。`);
-  }
-);
-
-// 12. insert-image-from-file
+// 11. insert-image-from-file
 server.registerTool(
   "insert-image-from-file",
   {
@@ -709,7 +629,7 @@ server.registerTool(
   }
 );
 
-// 13. search-documents
+// 12. search-documents
 server.registerTool(
   "search-documents",
   {
@@ -790,7 +710,7 @@ server.registerTool(
   }
 );
 
-// 14. get-comments
+// 13. get-comments
 server.registerTool(
   "get-comments",
   {
@@ -864,7 +784,7 @@ server.registerTool(
   }
 );
 
-// 15. reply-comment
+// 14. reply-comment
 server.registerTool(
   "reply-comment",
   {
@@ -891,7 +811,7 @@ server.registerTool(
   }
 );
 
-// 16. resolve-comment
+// 15. resolve-comment
 server.registerTool(
   "resolve-comment",
   {
@@ -918,7 +838,7 @@ server.registerTool(
   }
 );
 
-// 17. export-pdf
+// 16. export-pdf
 server.registerTool(
   "export-pdf",
   {
