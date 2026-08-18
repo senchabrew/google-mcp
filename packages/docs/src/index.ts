@@ -10,6 +10,7 @@ import {
 } from "@senchabrew/google-mcp-auth";
 import { drive as googleDrive } from "@googleapis/drive";
 import { docs as googleDocs } from "@googleapis/docs";
+import type { docs_v1 } from "@googleapis/docs";
 import { loadConfigs, checkAccess, checkFolderAccess } from "./permissions.js";
 import { writeFile, mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
@@ -390,7 +391,100 @@ server.registerTool(
   }
 );
 
-// 7. search-documents
+// 7. list-tabs
+server.registerTool(
+  "list-tabs",
+  {
+    description:
+      "Google Docs のタブ構成（tabId・タイトル・階層）を取得する。タブを対象にした操作の前に呼ぶ。allowlist に登録されたドキュメントのみ。レスポンスは TOON 形式で返す。",
+    inputSchema: {
+      fileId: z.string().describe("ドキュメントのファイルID"),
+    },
+  },
+  async ({ fileId }: { fileId: string }) => {
+    const { allowed, reason } = await resolveAccess(fileId, false);
+    if (!allowed) return errorResult(reason!);
+
+    const mimeError = await assertDocsMimeType(fileId);
+    if (mimeError) return errorResult(mimeError);
+
+    const docsApi = await getDocs();
+    const res = await docsApi.documents.get({
+      documentId: fileId,
+      includeTabsContent: true,
+    });
+
+    const rows: Array<{ tabId: string; title: string; nestingLevel: number; index: number }> = [];
+    const walk = (tabs: docs_v1.Schema$Tab[] | undefined, level: number) => {
+      for (const tab of tabs ?? []) {
+        const p = tab.tabProperties ?? {};
+        rows.push({
+          tabId: p.tabId ?? "",
+          title: p.title ?? "",
+          nestingLevel: level,
+          index: p.index ?? 0,
+        });
+        walk(tab.childTabs ?? undefined, level + 1);
+      }
+    };
+    walk(res.data.tabs ?? undefined, 0);
+
+    return rows.length > 0
+      ? toonResult({ tabs: rows })
+      : textResult("タブが見つかりませんでした。");
+  }
+);
+
+// 8. add-tab
+server.registerTool(
+  "add-tab",
+  {
+    description:
+      "Google Docs に新しいタブを追加する（任意で本文テキストも投入）。allowlist で access: readwrite が付いたドキュメントのみ。",
+    inputSchema: {
+      fileId: z.string().describe("ドキュメントのファイルID"),
+      title: z.string().describe("新しいタブのタイトル"),
+      content: z
+        .string()
+        .optional()
+        .describe("タブに入れる本文（プレーンテキスト。書式が必要な場合は作成後に replace-text 等で編集）"),
+    },
+  },
+  async ({ fileId, title, content }: { fileId: string; title: string; content?: string }) => {
+    const { allowed, reason } = await resolveAccess(fileId, true);
+    if (!allowed) return errorResult(reason!);
+
+    const mimeError = await assertDocsMimeType(fileId);
+    if (mimeError) return errorResult(mimeError);
+
+    const docsApi = await getDocs();
+    const res = await docsApi.documents.batchUpdate({
+      documentId: fileId,
+      requestBody: {
+        requests: [{ addDocumentTab: { tabProperties: { title } } }],
+      },
+    });
+    const tabId = res.data.replies?.[0]?.addDocumentTab?.tabProperties?.tabId;
+    if (!tabId) {
+      return errorResult("タブは作成された可能性がありますが、tabId の取得に失敗しました。list-tabs で確認してください。");
+    }
+
+    if (content) {
+      await docsApi.documents.batchUpdate({
+        documentId: fileId,
+        requestBody: {
+          requests: [{ insertText: { location: { tabId, index: 1 }, text: content } }],
+        },
+      });
+    }
+
+    return toonResult({
+      added: { tabId, title, contentInserted: Boolean(content) },
+    });
+  }
+);
+
+// 9. search-documents
 server.registerTool(
   "search-documents",
   {
@@ -471,7 +565,7 @@ server.registerTool(
   }
 );
 
-// 8. get-comments
+// 10. get-comments
 server.registerTool(
   "get-comments",
   {
@@ -545,7 +639,7 @@ server.registerTool(
   }
 );
 
-// 9. reply-comment
+// 11. reply-comment
 server.registerTool(
   "reply-comment",
   {
@@ -572,7 +666,7 @@ server.registerTool(
   }
 );
 
-// 10. resolve-comment
+// 12. resolve-comment
 server.registerTool(
   "resolve-comment",
   {
@@ -599,7 +693,7 @@ server.registerTool(
   }
 );
 
-// 11. export-pdf
+// 13. export-pdf
 server.registerTool(
   "export-pdf",
   {
@@ -642,7 +736,7 @@ if (isMain) {
   const { StdioServerTransport } = await import(
     "@modelcontextprotocol/sdk/server/stdio.js"
   );
-  const server = new McpServer({ name: "google-docs", version: "1.3.0" });
+  const server = new McpServer({ name: "google-docs", version: "1.4.0" });
   register(server);
   await server.connect(new StdioServerTransport());
 }
