@@ -881,7 +881,7 @@ if (isMain) {
   const { StdioServerTransport } = await import(
     "@modelcontextprotocol/sdk/server/stdio.js"
   );
-  const server = new McpServer({ name: "google-docs", version: "1.5.0" });
+  const server = new McpServer({ name: "google-docs", version: "1.5.1" });
   register(server);
   await server.connect(new StdioServerTransport());
 }
