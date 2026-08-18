@@ -12,8 +12,9 @@ import { drive as googleDrive } from "@googleapis/drive";
 import { docs as googleDocs } from "@googleapis/docs";
 import type { docs_v1 } from "@googleapis/docs";
 import { loadConfigs, checkAccess, checkFolderAccess } from "./permissions.js";
+import { createReadStream, existsSync } from "node:fs";
 import { writeFile, mkdir } from "node:fs/promises";
-import { dirname } from "node:path";
+import { dirname, extname } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
@@ -556,7 +557,159 @@ server.registerTool(
   }
 );
 
-// 11. search-documents
+/** タブIDで対象タブを再帰的に探す。tabId未指定なら最初のタブを返す */
+function findTab(
+  tabs: docs_v1.Schema$Tab[] | undefined,
+  tabId: string | undefined
+): docs_v1.Schema$Tab | undefined {
+  for (const tab of tabs ?? []) {
+    if (!tabId || tab.tabProperties?.tabId === tabId) return tab;
+    const child = findTab(tab.childTabs ?? undefined, tabId);
+    if (child) return child;
+  }
+  return undefined;
+}
+
+/** タブ本文の末尾index（最終改行の直前）を返す */
+async function getTabEndIndex(fileId: string, tabId: string | undefined): Promise<{ endIndex: number; tabId?: string } | null> {
+  const docsApi = await getDocs();
+  const doc = await docsApi.documents.get({ documentId: fileId, includeTabsContent: true });
+  const tab = findTab(doc.data.tabs ?? undefined, tabId);
+  const content = tab?.documentTab?.body?.content;
+  if (!content?.length) return null;
+  const endIndex = (content[content.length - 1].endIndex ?? 1) - 1;
+  return { endIndex, tabId: tab?.tabProperties?.tabId ?? undefined };
+}
+
+// 11. insert-code-block
+server.registerTool(
+  "insert-code-block",
+  {
+    description:
+      "Google Docs の末尾にコードブロック風の書式（等幅フォント+グレー背景）でテキストを挿入する。Docs APIはネイティブのコードブロック（スマートチップ）に未対応のため、スタイルで再現する。allowlist で access: readwrite が付いたドキュメントのみ。",
+    inputSchema: {
+      fileId: z.string().describe("ドキュメントのファイルID"),
+      code: z.string().describe("挿入するコード"),
+      tabId: z.string().optional().describe("対象タブID（省略時は最初のタブ。list-tabsで取得）"),
+    },
+  },
+  async ({ fileId, code, tabId }: { fileId: string; code: string; tabId?: string }) => {
+    const { allowed, reason } = await resolveAccess(fileId, true);
+    if (!allowed) return errorResult(reason!);
+
+    const mimeError = await assertDocsMimeType(fileId);
+    if (mimeError) return errorResult(mimeError);
+
+    const pos = await getTabEndIndex(fileId, tabId);
+    if (!pos) return errorResult("挿入位置の特定に失敗しました（タブが見つからないか本文が空です）。");
+
+    const text = `\n${code.endsWith("\n") ? code : code + "\n"}`;
+    const start = pos.endIndex + 1;
+    const end = start + text.length - 1;
+    const tabRef = pos.tabId ? { tabId: pos.tabId } : {};
+
+    const docsApi = await getDocs();
+    await docsApi.documents.batchUpdate({
+      documentId: fileId,
+      requestBody: {
+        requests: [
+          { insertText: { location: { index: pos.endIndex, ...tabRef }, text } },
+          {
+            updateTextStyle: {
+              range: { startIndex: start, endIndex: end, ...tabRef },
+              textStyle: { weightedFontFamily: { fontFamily: "Courier New" }, fontSize: { magnitude: 10, unit: "PT" } },
+              fields: "weightedFontFamily,fontSize",
+            },
+          },
+          {
+            updateParagraphStyle: {
+              range: { startIndex: start, endIndex: end, ...tabRef },
+              paragraphStyle: {
+                shading: { backgroundColor: { color: { rgbColor: { red: 0.95, green: 0.95, blue: 0.95 } } } },
+              },
+              fields: "shading",
+            },
+          },
+        ],
+      },
+    });
+    return textResult(`コードブロック（${code.length}文字）を末尾に挿入しました。`);
+  }
+);
+
+// 12. insert-image-from-file
+server.registerTool(
+  "insert-image-from-file",
+  {
+    description:
+      "ローカルの画像ファイルをドキュメントの末尾に挿入する（Drive に一時アップロード→挿入→一時ファイル削除）。allowlist で access: readwrite が付いたドキュメントのみ。",
+    inputSchema: {
+      fileId: z.string().describe("ドキュメントのファイルID"),
+      imagePath: z.string().describe("画像ファイルの絶対パス（png / jpeg / gif）"),
+      widthPt: z.number().optional().describe("幅（ポイント。省略時は原寸。ページ幅は約468pt）"),
+      tabId: z.string().optional().describe("対象タブID（省略時は最初のタブ。list-tabsで取得）"),
+    },
+  },
+  async ({ fileId, imagePath, widthPt, tabId }: { fileId: string; imagePath: string; widthPt?: number; tabId?: string }) => {
+    const { allowed, reason } = await resolveAccess(fileId, true);
+    if (!allowed) return errorResult(reason!);
+
+    const mimeError = await assertDocsMimeType(fileId);
+    if (mimeError) return errorResult(mimeError);
+
+    const resolvedImagePath = imagePath.startsWith("~")
+      ? imagePath.replace(/^~/, process.env.HOME ?? "")
+      : imagePath;
+    if (!existsSync(resolvedImagePath)) {
+      return errorResult(`画像ファイルが見つかりません: ${resolvedImagePath}`);
+    }
+    const ext = extname(resolvedImagePath).toLowerCase();
+    const mime = { ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif" }[ext];
+    if (!mime) {
+      return errorResult(`未対応の画像形式です (${ext})。png / jpeg / gif を使ってください。`);
+    }
+
+    const drive = await getDrive();
+    // Driveに一時アップロードし、リンクを知っている全員が読めるようにする (Docs APIが画像URLを取得するため)
+    const uploaded = await drive.files.create({
+      requestBody: { name: `docs-image-temp-${Date.now()}${ext}` },
+      media: { mimeType: mime, body: createReadStream(resolvedImagePath) },
+      fields: "id",
+    });
+    const tempId = uploaded.data.id!;
+    try {
+      await drive.permissions.create({
+        fileId: tempId,
+        requestBody: { type: "anyone", role: "reader" },
+      });
+
+      const docsApi = await getDocs();
+      const res = await docsApi.documents.batchUpdate({
+        documentId: fileId,
+        requestBody: {
+          requests: [
+            {
+              insertInlineImage: {
+                uri: `https://drive.google.com/uc?export=download&id=${tempId}`,
+                endOfSegmentLocation: { segmentId: "", ...(tabId ? { tabId } : {}) },
+                ...(widthPt !== undefined
+                  ? { objectSize: { width: { magnitude: widthPt, unit: "PT" } } }
+                  : {}),
+              },
+            },
+          ],
+        },
+      });
+      const objectId = res.data.replies?.[0]?.insertInlineImage?.objectId;
+      return textResult(`画像を末尾に挿入しました (objectId: ${objectId ?? "?"})`);
+    } finally {
+      // Docsは挿入時に画像データを取り込むため、一時ファイルは削除してよい
+      await drive.files.delete({ fileId: tempId }).catch(() => {});
+    }
+  }
+);
+
+// 13. search-documents
 server.registerTool(
   "search-documents",
   {
@@ -637,7 +790,7 @@ server.registerTool(
   }
 );
 
-// 10. get-comments
+// 14. get-comments
 server.registerTool(
   "get-comments",
   {
@@ -711,7 +864,7 @@ server.registerTool(
   }
 );
 
-// 11. reply-comment
+// 15. reply-comment
 server.registerTool(
   "reply-comment",
   {
@@ -738,7 +891,7 @@ server.registerTool(
   }
 );
 
-// 12. resolve-comment
+// 16. resolve-comment
 server.registerTool(
   "resolve-comment",
   {
@@ -765,7 +918,7 @@ server.registerTool(
   }
 );
 
-// 13. export-pdf
+// 17. export-pdf
 server.registerTool(
   "export-pdf",
   {
@@ -808,7 +961,7 @@ if (isMain) {
   const { StdioServerTransport } = await import(
     "@modelcontextprotocol/sdk/server/stdio.js"
   );
-  const server = new McpServer({ name: "google-docs", version: "1.4.0" });
+  const server = new McpServer({ name: "google-docs", version: "1.5.0" });
   register(server);
   await server.connect(new StdioServerTransport());
 }
