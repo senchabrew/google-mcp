@@ -19,9 +19,9 @@ Google API の MCP (Model Context Protocol) サーバー群をまとめた pnpm 
 
 | サービス | 読み取り | 書き込み |
 |---|---|---|
-| Sheets | list / get / get-values / export-pdf | update / append / clear-values / delete-rows / add-sheet / create-spreadsheet 等 |
-| Docs | list / read / search / get-comments / export-pdf | create-document / update-document (全置換) / replace-text (部分編集) / reply-comment 等 |
-| Slides | list / read / raw-structure / thumbnail / search / export-pdf | create / create-from-template / replace-text / batch-update |
+| Sheets | list / get / get-values / batch-get-values / export-pdf | update / append / clear-values / delete-rows / add-sheet / find-replace / copy-sheet / batch-update 等 |
+| Docs | list / read / search / list-tabs / get-comments / export-pdf | create-document / update-document (全置換) / replace-text / insert-text / add-tab / batch-update 等 |
+| Slides | list / read / raw-structure / thumbnail / search / export-pdf | create / create-from-template / replace-text / insert-image-from-file / batch-update |
 | Apps Script | list / get-project / get-content / list-executions | update-content / run-function |
 | Calendar | get-current-time / list-events / freebusy | create / update / delete-event |
 | Gmail | search / get-messages / get-threads / download-attachments / list-labels | create-draft (BCC・添付対応) / modify-labels |

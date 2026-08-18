@@ -484,7 +484,79 @@ server.registerTool(
   }
 );
 
-// 9. search-documents
+// 9. insert-text
+server.registerTool(
+  "insert-text",
+  {
+    description:
+      "Google Docs の先頭または末尾にプレーンテキストを追記する（既存本文は保持）。議事録への追記など。書式付きの編集は batch-update を使う。allowlist で access: readwrite が付いたドキュメントのみ。",
+    inputSchema: {
+      fileId: z.string().describe("ドキュメントのファイルID"),
+      text: z.string().describe("挿入するテキスト（プレーンテキスト）"),
+      position: z
+        .enum(["start", "end"])
+        .optional()
+        .default("end")
+        .describe("挿入位置。start: 本文の先頭、end: 本文の末尾"),
+      tabId: z.string().optional().describe("対象タブID（省略時は最初のタブ。list-tabsで取得）"),
+    },
+  },
+  async ({ fileId, text, position, tabId }: { fileId: string; text: string; position?: "start" | "end"; tabId?: string }) => {
+    const { allowed, reason } = await resolveAccess(fileId, true);
+    if (!allowed) return errorResult(reason!);
+
+    const mimeError = await assertDocsMimeType(fileId);
+    if (mimeError) return errorResult(mimeError);
+
+    const docsApi = await getDocs();
+    const request =
+      position === "start"
+        ? { insertText: { location: { index: 1, ...(tabId ? { tabId } : {}) }, text } }
+        : { insertText: { endOfSegmentLocation: { segmentId: "", ...(tabId ? { tabId } : {}) }, text } };
+    await docsApi.documents.batchUpdate({
+      documentId: fileId,
+      requestBody: { requests: [request] },
+    });
+    return textResult(`${position === "start" ? "先頭" : "末尾"}に${text.length}文字を挿入しました。`);
+  }
+);
+
+// 10. batch-update
+server.registerTool(
+  "batch-update",
+  {
+    description:
+      "Docs API の documents.batchUpdate を任意のリクエスト配列で実行する。表の挿入・テキストスタイル・タブ内の細かい編集など、専用ツールが無い操作の汎用口。タブを対象にする場合は各リクエストの location に tabId を指定する。allowlist で access: readwrite が付いたドキュメントのみ。",
+    inputSchema: {
+      fileId: z.string().describe("ドキュメントのファイルID"),
+      requests: z
+        .array(z.record(z.string(), z.unknown()))
+        .min(1)
+        .describe(
+          "Docs API の Request オブジェクト配列（例: [{ insertTable: {...} }, { updateTextStyle: {...} }]）"
+        ),
+    },
+  },
+  async ({ fileId, requests }: { fileId: string; requests: Array<Record<string, unknown>> }) => {
+    const { allowed, reason } = await resolveAccess(fileId, true);
+    if (!allowed) return errorResult(reason!);
+
+    const mimeError = await assertDocsMimeType(fileId);
+    if (mimeError) return errorResult(mimeError);
+
+    const docsApi = await getDocs();
+    const res = await docsApi.documents.batchUpdate({
+      documentId: fileId,
+      requestBody: { requests: requests as docs_v1.Schema$Request[] },
+    });
+    return toonResult({
+      applied: (res.data.replies ?? []).length,
+      replies: res.data.replies ?? [],
+    });
+  }
+);
+
+// 11. search-documents
 server.registerTool(
   "search-documents",
   {

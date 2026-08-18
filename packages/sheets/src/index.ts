@@ -10,6 +10,7 @@ import {
 } from "@senchabrew/google-mcp-auth";
 import { drive as googleDrive } from "@googleapis/drive";
 import { sheets as googleSheets } from "@googleapis/sheets";
+import type { sheets_v4 } from "@googleapis/sheets";
 import { loadConfigs, checkAccess } from "./permissions.js";
 import { existsSync } from "node:fs";
 import { writeFile, mkdir } from "node:fs/promises";
@@ -426,6 +427,136 @@ server.registerTool(
     await mkdir(dirname(savePath), { recursive: true });
     await writeFile(savePath, buf);
     return textResult(`PDFを保存しました: ${savePath} (${buf.length.toLocaleString()} bytes)`);
+  }
+);
+
+// 12. batch-get-values
+server.registerTool(
+  "batch-get-values",
+  {
+    description:
+      "複数のセル範囲の値を1回のリクエストでまとめて取得する。レスポンスはTOON形式で返す。",
+    inputSchema: {
+      spreadsheetId: z.string().describe("スプレッドシートID"),
+      ranges: z.array(z.string()).min(1).describe("取得範囲の配列（A1表記。例: [\"Sheet1!A1:D10\", \"集計!B2:B20\"]）"),
+    },
+  },
+  async ({ spreadsheetId, ranges }) => {
+    const { allowed, reason } = await resolveAccess(spreadsheetId, false);
+    if (!allowed) return errorResult(reason!);
+
+    const sheets = await getSheets();
+    const res = await sheets.spreadsheets.values.batchGet({ spreadsheetId, ranges });
+    const valueRanges = (res.data.valueRanges ?? []).map((vr) => ({
+      range: vr.range ?? "",
+      values: vr.values ?? [],
+    }));
+    return toonResult({ valueRanges });
+  }
+);
+
+// 13. find-replace
+server.registerTool(
+  "find-replace",
+  {
+    description:
+      "スプレッドシート内の文字列を一括置換する。access: readwrite のスプレッドシートのみ。sheetId 指定でそのシートのみ、省略時は全シートが対象。",
+    inputSchema: {
+      spreadsheetId: z.string().describe("スプレッドシートID"),
+      find: z.string().describe("検索文字列"),
+      replacement: z.string().describe("置換後の文字列"),
+      matchCase: z.boolean().optional().default(true).describe("大文字小文字を区別するか"),
+      matchEntireCell: z.boolean().optional().default(false).describe("セル全体一致のみ置換するか"),
+      sheetId: z.number().int().optional().describe("対象シートID（省略時は全シート。get-spreadsheetで取得）"),
+    },
+  },
+  async ({ spreadsheetId, find, replacement, matchCase, matchEntireCell, sheetId }) => {
+    const { allowed, reason } = await resolveAccess(spreadsheetId, true);
+    if (!allowed) return errorResult(reason!);
+
+    const sheets = await getSheets();
+    const res = await sheets.spreadsheets.batchUpdate({
+      spreadsheetId,
+      requestBody: {
+        requests: [
+          {
+            findReplace: {
+              find,
+              replacement,
+              matchCase,
+              matchEntireCell,
+              ...(sheetId !== undefined ? { sheetId } : { allSheets: true }),
+            },
+          },
+        ],
+      },
+    });
+    const r = res.data.replies?.[0]?.findReplace;
+    return textResult(
+      `置換しました（値: ${r?.valuesChanged ?? 0}箇所、数式: ${r?.formulasChanged ?? 0}箇所、対象シート: ${r?.sheetsChanged ?? 0}）。`
+    );
+  }
+);
+
+// 14. copy-sheet-to-spreadsheet
+server.registerTool(
+  "copy-sheet-to-spreadsheet",
+  {
+    description:
+      "シート（タブ）を別のスプレッドシートへ複製する。コピー元は readonly 可、コピー先は access: readwrite が必要。テンプレタブの配布に使える。",
+    inputSchema: {
+      spreadsheetId: z.string().describe("コピー元のスプレッドシートID"),
+      sheetId: z.number().int().describe("コピーするシートID（get-spreadsheetで取得）"),
+      destinationSpreadsheetId: z.string().describe("コピー先のスプレッドシートID"),
+    },
+  },
+  async ({ spreadsheetId, sheetId, destinationSpreadsheetId }) => {
+    const src = await resolveAccess(spreadsheetId, false);
+    if (!src.allowed) return errorResult(`コピー元: ${src.reason}`);
+    const dst = await resolveAccess(destinationSpreadsheetId, true);
+    if (!dst.allowed) return errorResult(`コピー先: ${dst.reason}`);
+
+    const sheets = await getSheets();
+    const res = await sheets.spreadsheets.sheets.copyTo({
+      spreadsheetId,
+      sheetId,
+      requestBody: { destinationSpreadsheetId },
+    });
+    return textResult(
+      `シートをコピーしました（コピー先での名前: 「${res.data.title}」/ sheetId: ${res.data.sheetId}）。名前の変更は batch-update の updateSheetProperties で可能。`
+    );
+  }
+);
+
+// 15. batch-update
+server.registerTool(
+  "batch-update",
+  {
+    description:
+      "Sheets API の spreadsheets.batchUpdate を任意のリクエスト配列で実行する。セル書式（太字・背景色・罫線・列幅）・シート名変更・シート複製・行列の固定・条件付き書式・フィルタなど、専用ツールが無い操作の汎用口。access: readwrite のスプレッドシートのみ。",
+    inputSchema: {
+      spreadsheetId: z.string().describe("スプレッドシートID"),
+      requests: z
+        .array(z.record(z.string(), z.unknown()))
+        .min(1)
+        .describe(
+          "Sheets API の Request オブジェクト配列（例: [{ repeatCell: {...} }, { updateSheetProperties: {...} }]）"
+        ),
+    },
+  },
+  async ({ spreadsheetId, requests }) => {
+    const { allowed, reason } = await resolveAccess(spreadsheetId, true);
+    if (!allowed) return errorResult(reason!);
+
+    const sheets = await getSheets();
+    const res = await sheets.spreadsheets.batchUpdate({
+      spreadsheetId,
+      requestBody: { requests: requests as sheets_v4.Schema$Request[] },
+    });
+    return toonResult({
+      applied: (res.data.replies ?? []).length,
+      replies: res.data.replies ?? [],
+    });
   }
 );
 

@@ -12,8 +12,9 @@ import { drive as googleDrive } from "@googleapis/drive";
 import { slides as googleSlides } from "@googleapis/slides";
 import type { slides_v1 } from "@googleapis/slides";
 import { loadConfigs, checkAccess, checkFolderAccess } from "./permissions.js";
+import { createReadStream, existsSync } from "node:fs";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
-import { dirname } from "node:path";
+import { dirname, extname } from "node:path";
 
 const GOOGLE_SLIDES_MIME_TYPE = "application/vnd.google-apps.presentation";
 const GOOGLE_FOLDER_MIME_TYPE = "application/vnd.google-apps.folder";
@@ -817,11 +818,97 @@ server.registerTool(
     return textResult(`PDFを保存しました: ${savePath} (${buf.length.toLocaleString()} bytes)`);
   }
 );
+
+// insert-image-from-file
+server.registerTool(
+  "insert-image-from-file",
+  {
+    description:
+      "ローカルの画像ファイルをスライドに挿入する（Drive に一時アップロード→挿入→一時ファイル削除）。スクリーンショットの貼り付けなどに使う。位置・サイズ未指定時はページ左上に原寸で入るので、必要なら batch-update (updatePageElementTransform) で調整する。allowlist で access: readwrite が付いたプレゼンテーションのみ。",
+    inputSchema: {
+      fileId: z.string().describe("プレゼンテーションのファイルID"),
+      pageObjectId: z.string().describe("挿入先スライドの objectId（read-presentation / get-raw-structure で取得）"),
+      imagePath: z.string().describe("画像ファイルの絶対パス（png / jpeg / gif）"),
+      widthPt: z.number().optional().describe("幅（ポイント。省略時は原寸）"),
+      heightPt: z.number().optional().describe("高さ（ポイント。省略時は原寸）"),
+      xPt: z.number().optional().describe("左上X座標（ポイント。省略時は0）"),
+      yPt: z.number().optional().describe("左上Y座標（ポイント。省略時は0）"),
+    },
+  },
+  async ({ fileId, pageObjectId, imagePath, widthPt, heightPt, xPt, yPt }) => {
+    const { allowed, reason } = await resolveAccess(fileId, true);
+    if (!allowed) {
+      return { content: [{ type: "text" as const, text: reason! }], isError: true };
+    }
+
+    const resolvedImagePath = imagePath.startsWith("~") ? imagePath.replace(/^~/, process.env.HOME ?? "") : imagePath;
+    if (!existsSync(resolvedImagePath)) {
+      return errorResult(`画像ファイルが見つかりません: ${resolvedImagePath}`);
+    }
+    const ext = extname(resolvedImagePath).toLowerCase();
+    const mime = { ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif" }[ext];
+    if (!mime) {
+      return errorResult(`未対応の画像形式です (${ext})。png / jpeg / gif を使ってください。`);
+    }
+
+    const drive = await getDrive();
+    // 1. Driveに一時アップロードし、リンクを知っている全員が読めるようにする (Slides APIが画像URLを取得するため)
+    const uploaded = await drive.files.create({
+      requestBody: { name: `slides-image-temp-${Date.now()}${ext}` },
+      media: { mimeType: mime, body: createReadStream(resolvedImagePath) },
+      fields: "id",
+    });
+    const tempId = uploaded.data.id!;
+    try {
+      await drive.permissions.create({
+        fileId: tempId,
+        requestBody: { type: "anyone", role: "reader" },
+      });
+
+      const elementProperties: slides_v1.Schema$PageElementProperties = { pageObjectId };
+      if (widthPt !== undefined && heightPt !== undefined) {
+        elementProperties.size = {
+          width: { magnitude: widthPt, unit: "PT" },
+          height: { magnitude: heightPt, unit: "PT" },
+        };
+      }
+      if (xPt !== undefined || yPt !== undefined) {
+        elementProperties.transform = {
+          scaleX: 1,
+          scaleY: 1,
+          translateX: xPt ?? 0,
+          translateY: yPt ?? 0,
+          unit: "PT",
+        };
+      }
+
+      const slides = await getSlides();
+      const res = await slides.presentations.batchUpdate({
+        presentationId: fileId,
+        requestBody: {
+          requests: [
+            {
+              createImage: {
+                url: `https://drive.google.com/uc?export=download&id=${tempId}`,
+                elementProperties,
+              },
+            },
+          ],
+        },
+      });
+      const objectId = res.data.replies?.[0]?.createImage?.objectId;
+      return textResult(`画像を挿入しました (objectId: ${objectId ?? "?"})`);
+    } finally {
+      // Slidesは挿入時に画像データを取り込むため、一時ファイルは削除してよい
+      await drive.files.delete({ fileId: tempId }).catch(() => {});
+    }
+  }
+);
 }
 
 // standalone 起動用ブートストラップ（統合エントリ (packages/all) から register() のみ import される場合はこの下は実行されない）
 if (import.meta.url === `file://${process.argv[1]}`) {
-  const server = new McpServer({ name: "google-slides", version: "1.0.0" });
+  const server = new McpServer({ name: "google-slides", version: "1.1.0" });
   register(server);
   const transport = new StdioServerTransport();
   await server.connect(transport);
